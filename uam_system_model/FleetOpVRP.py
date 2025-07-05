@@ -6,6 +6,7 @@ import logging
 from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 import re
+from time import time
 
 
 class FleetOpVRP:
@@ -66,6 +67,7 @@ class FleetOpVRP:
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
+        start_time = time()
         logger.info("[1] BUILDING SUBTOURS")
         list_subtours = self._BuildSubtours()
 
@@ -96,15 +98,13 @@ class FleetOpVRP:
         )
 
         logger.info("[5] Iterative Insertion")
-        logger.info(
-            f"NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())} / {int(num_flights_selected)}"
-        )
-
         unserved_tours, served_tours = self._crossover(unserved_tours, served_tours)
         logger.info("OPTIMIZATION COMPLETE")
         logger.info(
-            f"TOTAL NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())}"
+            f"TOTAL NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())}. SERVED RATIO: {served_tours['tour_length'].sum() / self.flight_demand['count'].sum()}"
         )
+        end_time = time()
+        logger.info(f"Total time taken: {(end_time - start_time)/60} minutes")
 
         return unserved_tours, served_tours
 

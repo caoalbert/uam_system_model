@@ -58,12 +58,13 @@ class FleetOpVRP:
         run_id = f"M{self.network.month}_D{self.network.day}_V{num_vehicles}_MZPT{max_zero_prep_time}_MTE{int(max_tour_energy*10)}"
         logger = logging.getLogger(f"FleetOpVRP_{run_id}")
         logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+        if not logger.hasHandlers():
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(levelname)s - %(asctime)s - %(name)s - %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
 
         logger.info("[1] BUILDING SUBTOURS")
         list_subtours = self._BuildSubtours()

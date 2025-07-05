@@ -1,17 +1,10 @@
 import os
-import sys
-import multiprocessing
 import numpy as np
-import pandas as pd
 
 DATA_PATH_1 = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
 DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv")
 
-# from time import time
-# from model.vrp import *
-# from model.ScheduleUtils import *
 from .utils.schedule_utils import *
-import re
 from ScheduleGenerator import ScheduleGenerator
 
 
@@ -19,7 +12,9 @@ class StarNetwork:
     def __init__(
         self,
         vertiport_names: list,
-        flight_distance_matrix: np.array = None,
+        flight_distance_matrix: np.array,
+        flight_time_matrix: np.array,
+        energy_consumption_matrix: np.array,
         path_schedule: str = DATA_PATH_1,
         path_seat_capacity: str = DATA_PATH_2,
     ):
@@ -31,6 +26,8 @@ class StarNetwork:
         self.vertiport_dict = {i: idx for idx, i in enumerate(vertiport_names)}
         self.vertiport_dict_inv = {idx: i for idx, i in enumerate(vertiport_names)}
         self.flight_distance_matrix = flight_distance_matrix
+        self.flight_time = flight_time_matrix
+        self.energy_consumption = energy_consumption_matrix
 
         self.demand_generator = ScheduleGenerator(path_schedule, path_seat_capacity)
 
@@ -46,6 +43,8 @@ class StarNetwork:
         seed: int = 9,
         fare: float = 3.0,
     ):
+        self.month = month
+        self.day = day
         """
         Load the demand for a specific day and month.
         :param month: Month of the year (1-12)
@@ -61,7 +60,10 @@ class StarNetwork:
 
         np.random.seed(seed)
 
-        (schedule, pax_arrival_times,) = self.demand_generator.get_one_day(
+        (
+            schedule,
+            pax_arrival_times,
+        ) = self.demand_generator.get_one_day(
             month=month,
             day=day,
             auto_regressive_alpha=auto_regressive_alpha,

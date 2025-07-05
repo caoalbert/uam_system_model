@@ -1,5 +1,0 @@
-numpy==1.26.4
-py4j==0.10.9.7
-pyarrow==14.0.2
-pyproj==3.6.1
-setuptools==69.5.1

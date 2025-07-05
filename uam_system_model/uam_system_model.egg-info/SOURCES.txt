@@ -1,8 +1,0 @@
-README.md
-pyproject.toml
-setup.cfg
-uam_system_model/uam_system_model.egg-info/PKG-INFO
-uam_system_model/uam_system_model.egg-info/SOURCES.txt
-uam_system_model/uam_system_model.egg-info/dependency_links.txt
-uam_system_model/uam_system_model.egg-info/requires.txt
-uam_system_model/uam_system_model.egg-info/top_level.txt

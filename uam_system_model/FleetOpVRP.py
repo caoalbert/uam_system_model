@@ -7,6 +7,7 @@ from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 import re
 
+
 class FleetOpVRP:
     def __init__(
         self,
@@ -71,7 +72,9 @@ class FleetOpVRP:
         selected_lists = self._BinPacking(list_subtours)
         demand2 = self._UpdateDemand(self.flight_demand, selected_lists, list_subtours)
         #
-        logger.info(f"NUMBER OF FLIGHTS BEFORE: {self.flight_demand['count'].sum()} NUMBER OF TOURS AFTER: {demand2['count'].sum()}")
+        logger.info(
+            f"NUMBER OF FLIGHTS BEFORE: {self.flight_demand['count'].sum()} NUMBER OF TOURS AFTER: {demand2['count'].sum()}"
+        )
         self.demand2 = demand2.copy()
 
         logger.info(f"[3] SOLVING THE CLUSTERING/SCHEDULING PROBLEM")
@@ -223,7 +226,9 @@ class FleetOpVRP:
                 duration += self.flight_time[origin_i, destination_i]
                 total_energy_comp += self.energy_consumption[origin_i, destination_i]
                 tour_revenue += demand.loc[i]["per_flight_revenue"]
-                tour_sequence = tour_sequence + self.network.vertiport_dict_inv[origin_i] + "-"
+                tour_sequence = (
+                    tour_sequence + self.network.vertiport_dict_inv[origin_i] + "-"
+                )
             tour_sequence = tour_sequence + self.network.vertiport_dict_inv[destination]
 
             subtour = pd.DataFrame(
@@ -255,7 +260,7 @@ class FleetOpVRP:
             lambda x: self.energy_consumption[int(x["origin"]), int(x["destination"])],
             axis=1,
         )
-        demand['tour_revenue'] = demand.apply(lambda x: x['per_flight_revenue'], axis=1)
+        demand["tour_revenue"] = demand.apply(lambda x: x["per_flight_revenue"], axis=1)
 
         for idx in selected_lists:
             subtour = list_subtours[idx]
@@ -371,7 +376,7 @@ class FleetOpVRP:
         )
 
         return demand2
-    
+
     def _process_cluster(self, cluster_id, demand2):
         unserved_tours = pd.DataFrame(
             columns=[

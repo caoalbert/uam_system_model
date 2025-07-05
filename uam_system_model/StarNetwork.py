@@ -1,13 +1,9 @@
 import os
 import numpy as np
-import pandas as pd
 
 DATA_PATH_1 = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
 DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv")
 
-# from time import time
-# from model.vrp import *
-# from model.ScheduleUtils import *
 from .utils.schedule_utils import *
 from ScheduleGenerator import ScheduleGenerator
 
@@ -82,4 +78,3 @@ class StarNetwork:
 
         self.schedule = schedule = schedule
         self.pax_arrival_times = pax_arrival_times
-

@@ -1,7 +1,9 @@
 import os
 import urllib.request
-DATA_URL = 'https://storage.googleapis.com/airport-data-lax/LAX_ind.csv'
+
+DATA_URL = "https://storage.googleapis.com/airport-data-lax/LAX_ind.csv"
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
+
 
 def ensure_data():
     if not os.path.exists(DATA_PATH):
@@ -10,5 +12,5 @@ def ensure_data():
         urllib.request.urlretrieve(DATA_URL, DATA_PATH)
         print("Download complete.")
 
-ensure_data()
 
+ensure_data()

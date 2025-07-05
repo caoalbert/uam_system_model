@@ -3,6 +3,8 @@ import matplotlib
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.gridspec as gridspec
+import seaborn as sns
 
 custom_colors = [
     "#c45161",
@@ -83,3 +85,45 @@ def plot_hourly_flight_distribution(StarNetwork, ylim=(0, 25)):
     )
     plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left")
     return fig, ax
+
+
+def plot_parameters(StarNetwork):
+
+    mask = np.triu(np.ones_like(StarNetwork.flight_distance_matrix, dtype=bool), k=1)
+
+    
+    fig = plt.figure(figsize=(26, 8), dpi=300)
+    gs = gridspec.GridSpec(1, 6)  # 2 rows, 3 columns
+
+    ax1 = fig.add_subplot(gs[0, 0:2])
+    ax2 = fig.add_subplot(gs[0, 2:4])
+    ax3 = fig.add_subplot(gs[0, 4:6])
+
+    sns.heatmap(StarNetwork.flight_distance_matrix, annot=True, cmap=cmap, ax=ax1,
+                cbar_kws={'label': 'Distance (Miles)'}, mask=mask)
+    ax1.set(yticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            xticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            title='Distance');
+    ax1.invert_yaxis()
+    plt.grid(False)
+
+    sns.heatmap(StarNetwork.flight_time * 5, annot=True, cmap=cmap, ax=ax2,
+                cbar_kws={'label': 'Flight Time (min)'}, mask=mask)
+    ax2.set(yticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            xticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            title='Flight Time');
+    ax2.invert_yaxis()
+    plt.grid(False)
+
+    sns.heatmap(StarNetwork.energy_consumption, annot=True, cmap=cmap, ax=ax3,
+                cbar_kws={'label': 'Energy Consumption (% SoC)'}, mask=mask)
+    ax3.set(yticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            xticklabels=list(StarNetwork.vertiport_dict.keys()), 
+            title='Energy Consumption');
+    ax3.invert_yaxis()
+
+    for ax in [ax1, ax2, ax3]:
+            ax.title.set_fontsize(30)
+    plt.tight_layout()
+
+    return fig, (ax1, ax2, ax3)

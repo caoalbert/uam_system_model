@@ -1010,7 +1010,9 @@ class FlightTask:
 
         next_task_start_time = next_task.start_time
 
-        prep_time = self.beta_0_coefficient * max(total_time_in_flight - self.max_zero_prep_time, 0)
+        prep_time = self.beta_0_coefficient * max(
+            total_time_in_flight - self.max_zero_prep_time, 0
+        )
 
         ready_time = (
             self.land_time

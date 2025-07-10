@@ -47,7 +47,6 @@ class FleetSizeOptimizer:
         schedule["per_flight_revenue"] = schedule["revenue"] / schedule["count"]
         self.flight_demand = schedule
 
-
         # Set up time-related parameters
         self.time_step = time_step
         self.schedule_time_step = int(1440 / time_step)
@@ -101,9 +100,7 @@ class FleetSizeOptimizer:
             )
         if len(self.flight_time.shape) == 2:
             self.flight_time = np.repeat(
-                self.flight_time[np.newaxis, :, :], 
-                self.schedule_time_step + 1, 
-                axis=0
+                self.flight_time[np.newaxis, :, :], self.schedule_time_step + 1, axis=0
             )
         if len(self.energy_consumption.shape) == 2:
             self.energy_consumption = np.repeat(
@@ -131,12 +128,11 @@ class FleetSizeOptimizer:
                 destination = row["destination"]
                 count = row["count"]
                 if (origin == 0) & (destination == vertiport_index):
-                    APT_CBD[time-1] += count
+                    APT_CBD[time - 1] += count
                 elif (destination == 0) & (origin == vertiport_index):
-                    CBD_APT[time-1] += count
+                    CBD_APT[time - 1] += count
 
         return (APT_CBD, CBD_APT)
-    
 
     def optimize(
         self,
@@ -162,12 +158,15 @@ class FleetSizeOptimizer:
         SELECT_VERTIPORT_INDEX = [0, vertiport_index]
         gamma = self.soc_transition_time
 
-        f_values = np.zeros((self.T, len(self.network.vertiports), len(self.network.vertiports)))
-        LAX_DTLA, DTLA_LAX = self.get_2_vertiport_demand(self.flight_demand, vertiport_index)
+        f_values = np.zeros(
+            (self.T, len(self.network.vertiports), len(self.network.vertiports))
+        )
+        LAX_DTLA, DTLA_LAX = self.get_2_vertiport_demand(
+            self.flight_demand, vertiport_index
+        )
         for t in range(self.T - self.flight_time.max() - 1):
             f_values[t + 1][0][vertiport_index] = LAX_DTLA[t]
             f_values[t + 1][vertiport_index][0] = DTLA_LAX[t]
-            
 
         tau = []
         kappa = []
@@ -206,7 +205,12 @@ class FleetSizeOptimizer:
 
         # Create variables
         ni = m.addVars(
-            ((t, i, k) for t in range(T) for i in SELECT_VERTIPORT_INDEX for k in range(K + 1)),
+            (
+                (t, i, k)
+                for t in range(T)
+                for i in SELECT_VERTIPORT_INDEX
+                for k in range(K + 1)
+            ),
             vtype=GRB.INTEGER,
             name="n",
         )
@@ -261,7 +265,9 @@ class FleetSizeOptimizer:
                             and tau[t][j][i][index] != 0
                             and k + kappa[t][j][i][index] <= K
                         )
-                        - quicksum(uij[t, i, j, k] for j in SELECT_VERTIPORT_INDEX if j != i)
+                        - quicksum(
+                            uij[t, i, j, k] for j in SELECT_VERTIPORT_INDEX if j != i
+                        )
                         + quicksum(
                             cijk[t - np.ceil(sum(gamma[x:k]) / self.time_step), i, x, k]
                             for x in range(k)
@@ -328,7 +334,7 @@ class FleetSizeOptimizer:
         m.update()
         m.Params.MIPGap = optimality_gap
         m.Params.FeasibilityTol = 1e-5
-        m.Params.TimeLimit = 60 * 30 # 30 minutes time limit
+        m.Params.TimeLimit = 60 * 30  # 30 minutes time limit
         m.optimize()
 
         total_fleet_size = int(
@@ -339,11 +345,8 @@ class FleetSizeOptimizer:
 
         results = []
         for v in m.getVars():
-            if v.x > 1e-6: 
-                results.append({
-                    'Variable': v.varName,
-                    'Value': v.x
-                })
+            if v.x > 1e-6:
+                results.append({"Variable": v.varName, "Value": v.x})
         results_df = pd.DataFrame(results)
 
         return total_fleet_size, results_df

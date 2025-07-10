@@ -4,7 +4,7 @@ from gurobipy import Model, GRB
 import gurobipy as gp
 import logging
 from tqdm import tqdm
-from multiprocessing.dummy import Pool as ThreadPool
+import multiprocessing
 import re
 from time import time
 
@@ -45,18 +45,32 @@ class FleetOpVRP:
         num_vehicles,
         max_zero_prep_time,
         max_tour_energy,
+        beta_0_coefficient,
+        epsilon=0,
         linear_battery_charging=False,
         n_processes=16,
         verbose=False,
     ):
+        """
+        param num_vehicles: Number of vehicles in the fleet
+        param max_zero_prep_time: Maximum flight duration under which no preparation time is required (in 5 minute intervals)
+        param max_tour_energy: Maximum energy consumption for a tour (in fraction of battery capacity)
+        param epsilon: Maximum time difference between flights in a subtour (in 5 minute intervals)
+        param linear_battery_charging: If True, use linear battery charging model
+        param n_processes: Number of parallel processes to use for solving the VRP
+        param verbose: If True, print verbose output during network construction
+        """
+
         self.linear = linear_battery_charging
         self.num_vehicles = num_vehicles
         self.max_zero_prep_time = max_zero_prep_time
         self.max_tour_energy = max_tour_energy
+        self.beta_0_coefficient = beta_0_coefficient
+        self.epsilon = epsilon
         # verbose network construction, 1-vehicle problem
         self.verbose = verbose
 
-        run_id = f"M{self.network.month}_D{self.network.day}_V{num_vehicles}_MZPT{max_zero_prep_time}_MTE{int(max_tour_energy*10)}"
+        run_id = f"M{self.network.month}_D{self.network.day}_V{num_vehicles}_MZPT{max_zero_prep_time}_MTE{int(max_tour_energy)}"
         logger = logging.getLogger(f"FleetOpVRP_{run_id}")
         logger.setLevel(logging.INFO)
         if not logger.hasHandlers():
@@ -104,7 +118,7 @@ class FleetOpVRP:
             f"TOTAL NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())}. SERVED RATIO: {served_tours['tour_length'].sum() / self.flight_demand['count'].sum()}"
         )
         end_time = time()
-        logger.info(f"Total time taken: {(end_time - start_time)/60} minutes")
+        logger.info(f"Total time taken: {(end_time - start_time)/60} minutes \n")
 
         return unserved_tours, served_tours
 
@@ -140,8 +154,12 @@ class FleetOpVRP:
                 origin = row["origin"]
                 # Subtour conditions
                 if (
-                    ((time - time_ready) >= 0 and (time - time_ready) <= 0)
-                    and energy_consumed < self.max_tour_energy
+                    ((time - time_ready) >= 0 and (time - time_ready) <= self.epsilon)
+                    and energy_consumed
+                    + self.energy_consumption[
+                        int(row["origin"]), int(row["destination"])
+                    ]
+                    < self.max_tour_energy
                     and prev_dest == origin
                 ):
                     energy_consumed += self.energy_consumption[
@@ -305,6 +323,7 @@ class FleetOpVRP:
                     self.flight_time,
                     self.energy_consumption,
                     self.max_zero_prep_time,
+                    self.beta_0_coefficient,
                 )
             )
             idx += 1
@@ -433,7 +452,7 @@ class FleetOpVRP:
         return unserved_tours, served_tours
 
     def _run_parallel_vrp(self, demand2, n_processes):
-        pool = ThreadPool(n_processes)
+        pool = multiprocessing.Pool(processes=n_processes)
         results = [
             pool.apply_async(self._process_cluster, args=(i, demand2))
             for i in range(self.num_vehicles)
@@ -501,8 +520,9 @@ class FleetOpVRP:
             served_tours["cluster_id"] != target_cluster
         ].reset_index(drop=True)
 
-        if unserved_tours.shape[0] > 120:
-            unserved_tours = unserved_tours.sample(n=100)
+        # commented out the sampling because the previous issue was addressed by relaxing the integer feasibility condition
+        # if unserved_tours.shape[0] > 120:
+        #     unserved_tours = unserved_tours.sample(n=100)
 
         input_to_vrp = (
             pd.concat([input_to_vrp, unserved_tours])
@@ -910,9 +930,9 @@ class FleetOpVRP:
 
         if resolve:
             m.Params.NumericFocus = 3
-            # m.Params.FeasibilityTol = 1e-5
             m.Params.FeasibilityTol = 1e-2
-            m.Params.IntFeasTol = 1e-5
+            m.Params.IntFeasTol = 1e-2
+            m.Params.MIPGap = 0.05
         else:
             m.Params.FeasibilityTol = 1e-6
             m.Params.IntFeasTol = 1e-6
@@ -966,6 +986,7 @@ class FlightTask:
         flight_time_matrix,
         energy_consumption_matrix,
         max_zero_prep_time,
+        beta_0_coefficient,
     ):
         self.name = name
         self.start_time = start_time
@@ -979,16 +1000,24 @@ class FlightTask:
         self.num_flights = num_flights
         self.origin = origin
         self.destination = destination
-        self.prep_time = 3 * max((self.duration - max_zero_prep_time), 0)
+
+        self.max_zero_prep_time = max_zero_prep_time
+        self.beta_0_coefficient = beta_0_coefficient
 
     def next_task(self, next_task):
+        reposition_time = self.flight_time_matrix[self.destination, next_task.origin]
+        total_time_in_flight = self.duration + reposition_time
+
         next_task_start_time = next_task.start_time
-        # ready_time = self.land_time + self.flight_time_matrix[self.destination, next_task.origin] + self.prep_time + 2 * (self.destination == next_task.origin)
+
+        prep_time = self.beta_0_coefficient * max(total_time_in_flight - self.max_zero_prep_time, 0)
+
         ready_time = (
             self.land_time
             + self.flight_time_matrix[self.destination, next_task.origin]
-            + self.prep_time
+            + prep_time
         )
+
         repo_energy = self.energy_consumption_matrix[self.destination, next_task.origin]
         if_same_dest = self.destination == next_task.origin
 
@@ -1070,10 +1099,10 @@ class AssignmentNetwork:
                     )
                     time_delta = ready_time - self.list_of_tasks[j].start_time
 
-                    if (threshold > 0.4) and (time_delta <= 3):
-                        cost.append(-0.002)
-                    elif if_same_dest:
+                    if if_same_dest:
                         cost.append(0)
+                    elif threshold > 0.4 and time_delta <= 5:
+                        cost.append(-0.002)
                     else:
                         cost.append(-0.001)
 

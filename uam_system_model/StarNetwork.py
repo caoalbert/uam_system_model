@@ -7,6 +7,7 @@ DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43
 from .utils.schedule_utils import *
 from .ScheduleGenerator import ScheduleGenerator
 
+
 class StarNetwork:
     def __init__(
         self,
@@ -59,10 +60,7 @@ class StarNetwork:
 
         np.random.seed(seed)
 
-        (
-            schedule,
-            pax_arrival_times,
-        ) = self.demand_generator.get_one_day(
+        (schedule, pax_arrival_times,) = self.demand_generator.get_one_day(
             month=month,
             day=day,
             auto_regressive_alpha=auto_regressive_alpha,

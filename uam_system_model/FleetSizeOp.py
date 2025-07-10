@@ -328,6 +328,7 @@ class FleetSizeOptimizer:
         m.update()
         m.Params.MIPGap = optimality_gap
         m.Params.FeasibilityTol = 1e-5
+        m.Params.TimeLimit = 60 * 30 # 30 minutes time limit
         m.optimize()
 
         total_fleet_size = int(

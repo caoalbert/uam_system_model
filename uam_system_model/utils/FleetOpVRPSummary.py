@@ -121,7 +121,7 @@ class FleetOpVRPSummary(FleetOpVRP):
             "energy_consumption_kWh": round(energy_consumption, 2),
             "TAM": round(total_aircraft_miles, 2),
             "RAM": round(revenue_aircraft_miles, 2),
-            "total_revenue": self.policy['tour_revenue'].sum(),
+            "total_revenue": self.policy["tour_revenue"].sum(),
             "average_load_factor": round(load_factor, 4),
         }
 

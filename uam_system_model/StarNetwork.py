@@ -35,8 +35,8 @@ class StarNetwork:
         self,
         month: int,
         day: int,
-        directional_demand: int,
         vertiport_pmf: np.array,
+        directional_demand: int = None,
         auto_regressive_alpha: float = 0,
         max_waiting_time: int = 5,
         occupancy: int = 4,
@@ -52,11 +52,6 @@ class StarNetwork:
         :param directional_demand: Total demand for the day
         :return: A tuple containing the schedule, passenger arrival times, and number of passengers per flight.
         """
-
-        if len(self.vertiport_dict) - len(vertiport_pmf):
-            raise ValueError(
-                "Length of vertiport_names and vertiport_pmf must be the same."
-            )
 
         np.random.seed(seed)
 

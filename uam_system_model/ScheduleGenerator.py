@@ -1,5 +1,5 @@
 import pandas as pd
-from .utils.schedule_utils import generate_uam_schedule
+from .utils.schedule_utils import generate_uam_schedule, generate_uam_schedule_v2
 
 
 class ScheduleGenerator:
@@ -128,18 +128,41 @@ class ScheduleGenerator:
         self.lax_flight_arr = lax_flight_arr
         self.lax_flight_dep = lax_flight_dep
 
-        schedule, pax_arrival_times = generate_uam_schedule(
-            lax_flight_arr,
-            lax_flight_dep,
-            self.yearly_capacity,
-            auto_regressive_alpha,
-            directional_demand,
-            vertiport_pmf,
-            occupancy,
-            max_waiting_time,
-            vertiport_dict_inv,
-            flight_distance_matrix,
-            fare,
-        )
+        if len(vertiport_pmf.shape) == 1:
+            if directional_demand is None:
+                raise ValueError(
+                    "Directional demand must be specified when vertiport_pmf is 1D."
+                )
+            schedule, pax_arrival_times = generate_uam_schedule(
+                lax_flight_arr,
+                lax_flight_dep,
+                self.yearly_capacity,
+                auto_regressive_alpha,
+                directional_demand,
+                vertiport_pmf,
+                occupancy,
+                max_waiting_time,
+                vertiport_dict_inv,
+                flight_distance_matrix,
+                fare,
+            )
+        elif len(vertiport_pmf.shape) == 3:
+            schedule, pax_arrival_times = generate_uam_schedule_v2(
+                lax_flight_arr,
+                lax_flight_dep,
+                auto_regressive_alpha,
+                vertiport_pmf,
+                occupancy,
+                max_waiting_time,
+                vertiport_dict_inv,
+                flight_distance_matrix,
+                fare,
+            )
+        else:
+            raise ValueError(
+                "vertiport_pmf must be a 1D or 3D array, got shape: {}".format(
+                    vertiport_pmf.shape
+                )
+            )
 
         return schedule, pax_arrival_times

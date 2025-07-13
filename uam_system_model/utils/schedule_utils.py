@@ -6,6 +6,131 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+def generate_uam_schedule_v2(
+    lax_flight_arr,
+    lax_flight_dep,
+    auto_regressive_alpha,
+    vertiport_pmf,
+    occupancy,
+    max_waiting_time,
+    vertiport_dict_inv,
+    flight_distance_matrix,
+    fare,
+):
+    lax_flight_arr = get_autoregressive_pax_count_v2(
+        lax_flight_arr, vertiport_pmf, "LAX-APT", auto_regressive_alpha
+    )
+    lax_flight_dep = get_autoregressive_pax_count_v2(
+        lax_flight_dep, vertiport_pmf, "APT-LAX", auto_regressive_alpha
+    )
+
+    origin_name = []
+    destination_name = []
+
+    # Generate passenger arrival times
+    lax_dtla = np.empty((1,))
+    for idx, row in lax_flight_arr.iterrows():
+        num_pax = row["capacity"]
+        delta_t = skewnorm.rvs(3, loc=31, scale=np.sqrt(2 * 1.5**2), size=num_pax)
+        delta_t += row["time"]
+        lax_dtla = np.concatenate([lax_dtla, delta_t])
+        origin_name += [0] * num_pax
+        destination_name += [row["destination"]] * num_pax
+    lax_dtla[lax_dtla >= 1440] -= 1440
+    lax_dtla = lax_dtla[1:]
+
+    dtla_lax = np.empty((1,))
+    for idx, row in lax_flight_dep.iterrows():
+        num_pax = row["capacity"]
+        delta_t = skewnorm.rvs(3, loc=93, scale=40, size=num_pax)
+        delta_t += np.random.normal(loc=10, scale=5 / 3, size=num_pax)
+        delta_t = row["time"] - delta_t
+        dtla_lax = np.concatenate([dtla_lax, delta_t])
+        origin_name += [row["origin"]] * num_pax
+        destination_name += [0] * num_pax
+    dtla_lax[dtla_lax < 0] += 1440
+    dtla_lax = dtla_lax[1:]
+
+    pax_arrival_times = np.concatenate(
+        [np.round(dtla_lax * 60), np.round(lax_dtla * 60)], axis=0
+    )
+    passenger_id = np.arange(0, len(pax_arrival_times))
+
+    paxArrivalDf = (
+        pd.DataFrame(
+            {
+                "passenger_id": passenger_id,
+                "passenger_arrival_time_s": pax_arrival_times,
+                "origin_vertiport_id": origin_name,
+                "destination_vertiport_id": destination_name,
+            }
+        )
+        .sort_values(by="passenger_arrival_time_s")
+        .reset_index(drop=True)
+    )
+
+    final_schedule = pd.DataFrame(columns=["schedule", "od", "num_pax", "revenue"])
+
+    for i in range(1, vertiport_pmf.shape[1]):
+        # CBD to LAX vertiport
+        dtla_lax_sche, dtla_lax_num_pax_flight = build_schedules(
+            paxArrivalDf[paxArrivalDf["origin_vertiport_id"] == i][
+                "passenger_arrival_time_s"
+            ].values
+            / 60,
+            max_waiting_time,
+            occupancy,
+        )
+        final_schedule = pd.concat(
+            [
+                final_schedule,
+                pd.DataFrame(
+                    {
+                        "schedule": dtla_lax_sche,
+                        "od": f"{vertiport_dict_inv[i]}_LAX",
+                        "num_pax": dtla_lax_num_pax_flight,
+                        "revenue": dtla_lax_num_pax_flight
+                        * flight_distance_matrix[i, 0]
+                        * fare,
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
+        # LAX TO CBD vertiport
+        lax_dtla_sche, lax_dtla_num_pax_flight = build_schedules(
+            paxArrivalDf[paxArrivalDf["destination_vertiport_id"] == i][
+                "passenger_arrival_time_s"
+            ].values
+            / 60,
+            max_waiting_time,
+            occupancy,
+        )
+        final_schedule = pd.concat(
+            [
+                final_schedule,
+                pd.DataFrame(
+                    {
+                        "schedule": lax_dtla_sche,
+                        "od": f"LAX_{vertiport_dict_inv[i]}",
+                        "num_pax": lax_dtla_num_pax_flight,
+                        "revenue": lax_dtla_num_pax_flight
+                        * flight_distance_matrix[0, i]
+                        * fare,
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
+    final_schedule = final_schedule.sort_values(by=["schedule", "od"]).reset_index(
+        drop=True
+    )
+
+    return final_schedule, paxArrivalDf
+
+
 def generate_uam_schedule(
     lax_flight_arr,
     lax_flight_dep,
@@ -250,3 +375,92 @@ def inverse_cdf(cumulative_pmf, num_samples):
 
     samples = np.array(samples)
     return samples
+
+
+def get_autoregressive_pax_count_v2(
+    lax_flight_arr, vertiport_pmf, direction, auto_regressive_alpha
+):
+    if direction == "LAX-APT":
+        alpha_index = 0
+    elif direction == "APT-LAX":
+        alpha_index = 1
+
+    lax_flight_arr["time_interval"] = lax_flight_arr["time"] // 60
+    lax_flight_arr_grouped = lax_flight_arr.groupby("time_interval").sum("capacity")
+    lax_flight_arr_grouped = (
+        lax_flight_arr_grouped.merge(
+            pd.DataFrame({"time_interval": np.arange(0, 24, 1), "demand": 0}),
+            on="time_interval",
+            how="outer",
+        )
+        .sort_values("time_interval")
+        .reset_index(drop=True)
+        .fillna(0)
+    )
+
+    # Calculate flight pax density over hourly rate
+    lax_flight_arr_merged = lax_flight_arr.merge(
+        lax_flight_arr_grouped, on="time_interval"
+    )
+    lax_flight_arr_merged["density"] = (
+        lax_flight_arr_merged["capacity_x"] / lax_flight_arr_merged["capacity_y"]
+    )
+    lax_flight_arr_merged["cum_density"] = lax_flight_arr_merged.groupby(
+        "time_interval"
+    )["density"].cumsum()
+
+    # Generate one realization of hourly rate
+    lax_dtla_hourly_uam_demand = (
+        vertiport_pmf[alpha_index] * lax_flight_arr_grouped["capacity"].values
+    )
+
+    output = pd.DataFrame(columns=["time", "capacity", "origin", "destination"])
+
+    assigned_pax = np.empty(shape=(1,), dtype=int)
+    for od in range(1, lax_dtla_hourly_uam_demand.shape[0]):
+        realized_rate = auto_regressive_poisson(
+            lax_dtla_hourly_uam_demand[0], auto_regressive_alpha
+        )
+
+        assigned_pax = np.empty(shape=(1,), dtype=int)
+        for i in range(24):
+            check = lax_flight_arr_merged[lax_flight_arr_merged["time_interval"] == i]
+            if check.shape[0] == 0:
+                continue
+            x = inverse_cdf(check["cum_density"].values, num_samples=realized_rate[i])
+            assigned_pax_i = np.histogram(x, np.arange(0, check.shape[0] + 1))[0]
+            assigned_pax = np.concatenate([assigned_pax, assigned_pax_i])
+
+        assigned_pax = assigned_pax[1:]
+        if alpha_index == 0:
+
+            output = pd.concat(
+                [
+                    output,
+                    pd.DataFrame(
+                        {
+                            "time": lax_flight_arr["time"],
+                            "capacity": assigned_pax,
+                            "origin": 0,
+                            "destination": od,
+                        }
+                    ),
+                ],
+                ignore_index=True,
+            )
+        elif alpha_index == 1:
+            output = pd.concat(
+                [
+                    output,
+                    pd.DataFrame(
+                        {
+                            "time": lax_flight_arr["time"],
+                            "capacity": assigned_pax,
+                            "origin": od,
+                            "destination": 0,
+                        }
+                    ),
+                ],
+                ignore_index=True,
+            )
+    return output

@@ -1,0 +1,43 @@
+{    
+    "capex": {
+        "cost_per_vehicle": 1300000,
+        "construction_cost": {
+            "LAX": 7000000,
+            "DTLA": 800000,
+            "LGB": 800000,
+            "WDHL": 800000,
+            "UVS": 800000,
+            "ANH": 800000,
+            "HWD": 800000,
+            "PSD": 800000,
+            "BVH": 800000
+        },
+        "land": {
+            "land_area_beta_0": 0.4167,
+            "land_area_beta_1": 4.1667,
+            "land_value_per_sqft": {
+                "LAX": 226.14,
+                "DTLA": 219.15,
+                "LGB": 242.18,
+                "WDHL": 104.97,
+                "UVS": 52.77,
+                "ANH": 88.66,
+                "HWD": 88.66,
+                "PSD": 200,
+                "BVH": 251.41
+            }
+        }
+    },
+    "opex": {
+        "energy_cost_per_kWh": 0.28,
+        "pilot_cost_per_aircraft_hour": 61,
+        "maintenance_cost_per_asm": 0.19,
+        "insurance_cost_factor": 0.035,
+        "battery_replacement_cost_per_aircraft_hour": 23.33,
+        "administrative_cost_factor": 0.09,
+        "vertiport_operation_cost_per_year": 1000000
+    }
+}
+
+
+

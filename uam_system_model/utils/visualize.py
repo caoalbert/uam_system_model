@@ -154,13 +154,16 @@ def plot_parameters(StarNetwork):
 
     return fig, (ax1, ax2, ax3)
 
-def plot_tnc_travel_time(tnc_travel_time_avg, vertiports):
+def plot_travel_time(travel_time_avg, 
+                     vertiports, 
+                     ylim=(0, 100),
+                     ylabel="TNC Trip Time (min)"):
 
     fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=200)
     for i in range(1,9):
         sns.lineplot(
             x=np.arange(24),
-            y=tnc_travel_time_avg[0, i, :],
+            y=travel_time_avg[0, i, :],
             label=vertiports[i],
             ax=ax[0],
             color=color_palette[i-1],
@@ -171,7 +174,7 @@ def plot_tnc_travel_time(tnc_travel_time_avg, vertiports):
         sns.lineplot
         sns.lineplot(
             x=np.arange(24),
-            y=tnc_travel_time_avg[i, 0, :],
+            y=travel_time_avg[i, 0, :],
             label=vertiports[i],
             ax=ax[1],
             color=color_palette[i-1],
@@ -187,14 +190,14 @@ def plot_tnc_travel_time(tnc_travel_time_avg, vertiports):
             xticks=[0, 6, 12, 18, 24 - 1],
             xticklabels=["0:00", "6:00", "12:00", "18:00", "24:00"],
             xlim=(-0.2, 23.2),
-            ylim=(0, 100),
+            ylim= ylim,
         )
         ax[i].xaxis.set_minor_locator(minorLocator)
         ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
     ax[0].set_title("LAX-Spokes")
     ax[1].set_title("Spokes-LAX")
     fig.text(
-        0.07, 0.5, "TNC Travel Time (min)", ha="center", va="center", rotation="vertical"
+        0.07, 0.5, ylabel, ha="center", va="center", rotation="vertical"
     )
     plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left");
 

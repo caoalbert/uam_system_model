@@ -13,8 +13,8 @@
             "BVH": 800000
         },
         "land": {
-            "land_area_beta_0": 0.4167,
-            "land_area_beta_1": 4.1667,
+            "land_area_beta_0": 1.3333,
+            "land_area_beta_1": 0.1667,
             "land_value_per_sqft": {
                 "LAX": 226.14,
                 "DTLA": 219.15,
@@ -35,7 +35,7 @@
         "insurance_cost_factor": 0.035,
         "battery_replacement_cost_per_aircraft_hour": 23.33,
         "administrative_cost_factor": 0.09,
-        "vertiport_operation_cost_per_year": 1000000
+        "vertiport_operation_cost_per_year": 0
     }
 }
 

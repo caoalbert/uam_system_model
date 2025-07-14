@@ -38,8 +38,12 @@ def plot_hourly_flight_distribution(StarNetwork, ylim=(0, 25)):
     schedule.loc[schedule["hour"] == 24.0, "hour"] = 0
 
     flight_count = schedule.groupby(["hour", "od"]).size().reset_index(name="count")
+    pivot_table = flight_count.pivot_table(index='hour', columns='od', values='count', fill_value=0)
+    flight_count = pivot_table.reset_index().melt(id_vars='hour', var_name='od', value_name='count')
+
     flight_count["origin"] = flight_count["od"].apply(lambda x: x.split("_")[0])
     flight_count["destination"] = flight_count["od"].apply(lambda x: x.split("_")[1])
+    flight_count = flight_count.fillna(0)
 
     fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=200)
     for idx, i in enumerate(StarNetwork.vertiports[1:]):
@@ -78,8 +82,8 @@ def plot_hourly_flight_distribution(StarNetwork, ylim=(0, 25)):
         )
         ax[i].xaxis.set_minor_locator(minorLocator)
         ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
-    ax[0].set_title("APT-CBD")
-    ax[1].set_title("CBD-APT")
+    ax[0].set_title("LAX-Spokes")
+    ax[1].set_title("Spokes-LAX")
     fig.text(
         0.08, 0.5, "Number of Flights", ha="center", va="center", rotation="vertical"
     )

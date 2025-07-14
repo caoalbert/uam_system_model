@@ -18,10 +18,10 @@ def generate_uam_schedule_v2(
     fare,
 ):
     lax_flight_arr = get_autoregressive_pax_count_v2(
-        lax_flight_arr, vertiport_pmf, "LAX-APT", auto_regressive_alpha
+        lax_flight_arr, vertiport_pmf, "LAX-Spoke", auto_regressive_alpha
     )
     lax_flight_dep = get_autoregressive_pax_count_v2(
-        lax_flight_dep, vertiport_pmf, "APT-LAX", auto_regressive_alpha
+        lax_flight_dep, vertiport_pmf, "Spoke-LAX", auto_regressive_alpha
     )
 
     origin_name = []
@@ -52,7 +52,7 @@ def generate_uam_schedule_v2(
     dtla_lax = dtla_lax[1:]
 
     pax_arrival_times = np.concatenate(
-        [np.round(dtla_lax * 60), np.round(lax_dtla * 60)], axis=0
+        [np.round(lax_dtla * 60), np.round(dtla_lax * 60)], axis=0
     )
     passenger_id = np.arange(0, len(pax_arrival_times))
 
@@ -267,7 +267,7 @@ def build_schedules(queue, max_waiting_time, occupancy):
     num_pax_per_flight = []
     cnt = 0
     first_pax = queue[0]
-    for i in range(queue.shape[0]):
+    for i in range(len(queue)):
         cnt += 1
         if (queue[i] - first_pax) > max_waiting_time:
             departure_time_aircraft.append(first_pax + max_waiting_time)
@@ -279,19 +279,16 @@ def build_schedules(queue, max_waiting_time, occupancy):
             departure_time_aircraft.append(queue[i])
             num_pax_per_flight.append(occupancy)
             cnt = 0
-            try:
+            if i + 1 < len(queue):
                 first_pax = queue[i + 1]
-            except IndexError:
-                pass
 
-    if queue[i] > departure_time_aircraft[-1]:
-        departure_time_aircraft.append(np.max(queue))
+    # Add remaining passengers if any
+    if len(departure_time_aircraft) == 0 or queue[-1] > departure_time_aircraft[-1]:
+        departure_time_aircraft.append(queue[-1])
         num_pax_per_flight.append(cnt)
 
-    departure_time_aircraft = np.array(departure_time_aircraft)
-    num_pax_per_flight = np.array(num_pax_per_flight)
+    return np.array(departure_time_aircraft), np.array(num_pax_per_flight)
 
-    return departure_time_aircraft, num_pax_per_flight
 
 
 def get_autoregressive_pax_count(arr_merged, auto_regressive_alpha):
@@ -378,17 +375,17 @@ def inverse_cdf(cumulative_pmf, num_samples):
 
 
 def get_autoregressive_pax_count_v2(
-    lax_flight_arr, vertiport_pmf, direction, auto_regressive_alpha
+    lax_flight, vertiport_pmf, direction, auto_regressive_alpha
 ):
-    if direction == "LAX-APT":
+    if direction == "LAX-Spoke":
         alpha_index = 0
-    elif direction == "APT-LAX":
+    elif direction == "Spoke-LAX":
         alpha_index = 1
 
-    lax_flight_arr["time_interval"] = lax_flight_arr["time"] // 60
-    lax_flight_arr_grouped = lax_flight_arr.groupby("time_interval").sum("capacity")
-    lax_flight_arr_grouped = (
-        lax_flight_arr_grouped.merge(
+    lax_flight["time_interval"] = lax_flight["time"] // 60
+    lax_flight_grouped = lax_flight.groupby("time_interval").sum("capacity")
+    lax_flight_grouped = (
+        lax_flight_grouped.merge(
             pd.DataFrame({"time_interval": np.arange(0, 24, 1), "demand": 0}),
             on="time_interval",
             how="outer",
@@ -399,19 +396,19 @@ def get_autoregressive_pax_count_v2(
     )
 
     # Calculate flight pax density over hourly rate
-    lax_flight_arr_merged = lax_flight_arr.merge(
-        lax_flight_arr_grouped, on="time_interval"
+    lax_flight_merged = lax_flight.merge(
+        lax_flight_grouped, on="time_interval"
     )
-    lax_flight_arr_merged["density"] = (
-        lax_flight_arr_merged["capacity_x"] / lax_flight_arr_merged["capacity_y"]
+    lax_flight_merged["density"] = (
+        lax_flight_merged["capacity_x"] / lax_flight_merged["capacity_y"]
     )
-    lax_flight_arr_merged["cum_density"] = lax_flight_arr_merged.groupby(
+    lax_flight_merged["cum_density"] = lax_flight_merged.groupby(
         "time_interval"
     )["density"].cumsum()
 
     # Generate one realization of hourly rate
     lax_dtla_hourly_uam_demand = (
-        vertiport_pmf[alpha_index] * lax_flight_arr_grouped["capacity"].values
+        vertiport_pmf[alpha_index] * lax_flight_grouped["capacity"].values
     )
 
     output = pd.DataFrame(columns=["time", "capacity", "origin", "destination"])
@@ -419,12 +416,12 @@ def get_autoregressive_pax_count_v2(
     assigned_pax = np.empty(shape=(1,), dtype=int)
     for od in range(1, lax_dtla_hourly_uam_demand.shape[0]):
         realized_rate = auto_regressive_poisson(
-            lax_dtla_hourly_uam_demand[0], auto_regressive_alpha
+            lax_dtla_hourly_uam_demand[od], auto_regressive_alpha
         )
 
         assigned_pax = np.empty(shape=(1,), dtype=int)
         for i in range(24):
-            check = lax_flight_arr_merged[lax_flight_arr_merged["time_interval"] == i]
+            check = lax_flight_merged[lax_flight_merged["time_interval"] == i]
             if check.shape[0] == 0:
                 continue
             x = inverse_cdf(check["cum_density"].values, num_samples=realized_rate[i])
@@ -439,7 +436,7 @@ def get_autoregressive_pax_count_v2(
                     output,
                     pd.DataFrame(
                         {
-                            "time": lax_flight_arr["time"],
+                            "time": lax_flight["time"],
                             "capacity": assigned_pax,
                             "origin": 0,
                             "destination": od,
@@ -454,7 +451,7 @@ def get_autoregressive_pax_count_v2(
                     output,
                     pd.DataFrame(
                         {
-                            "time": lax_flight_arr["time"],
+                            "time": lax_flight["time"],
                             "capacity": assigned_pax,
                             "origin": od,
                             "destination": 0,

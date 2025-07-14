@@ -1,5 +1,7 @@
 import pandas as pd
-from .utils.schedule_utils import generate_uam_schedule, generate_uam_schedule_v2
+
+from .utils.schedule_utils import (generate_uam_schedule,
+                                   generate_uam_schedule_v2)
 
 
 class ScheduleGenerator:

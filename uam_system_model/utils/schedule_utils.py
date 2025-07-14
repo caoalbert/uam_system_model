@@ -1,7 +1,8 @@
-from scipy.stats import skewnorm
-import pandas as pd
-import numpy as np
 import warnings
+
+import numpy as np
+import pandas as pd
+from scipy.stats import skewnorm
 
 warnings.filterwarnings("ignore")
 
@@ -290,7 +291,6 @@ def build_schedules(queue, max_waiting_time, occupancy):
     return np.array(departure_time_aircraft), np.array(num_pax_per_flight)
 
 
-
 def get_autoregressive_pax_count(arr_merged, auto_regressive_alpha):
     # Calculate hourly rate
     arr_merged_v2 = arr_merged.copy()
@@ -396,15 +396,13 @@ def get_autoregressive_pax_count_v2(
     )
 
     # Calculate flight pax density over hourly rate
-    lax_flight_merged = lax_flight.merge(
-        lax_flight_grouped, on="time_interval"
-    )
+    lax_flight_merged = lax_flight.merge(lax_flight_grouped, on="time_interval")
     lax_flight_merged["density"] = (
         lax_flight_merged["capacity_x"] / lax_flight_merged["capacity_y"]
     )
-    lax_flight_merged["cum_density"] = lax_flight_merged.groupby(
-        "time_interval"
-    )["density"].cumsum()
+    lax_flight_merged["cum_density"] = lax_flight_merged.groupby("time_interval")[
+        "density"
+    ].cumsum()
 
     # Generate one realization of hourly rate
     lax_dtla_hourly_uam_demand = (

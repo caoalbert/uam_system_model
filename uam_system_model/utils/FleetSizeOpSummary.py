@@ -1,10 +1,10 @@
-from matplotlib.ticker import MultipleLocator
 import matplotlib
-from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.gridspec as gridspec
 import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import MultipleLocator
 
 custom_colors = [
     "#c45161",

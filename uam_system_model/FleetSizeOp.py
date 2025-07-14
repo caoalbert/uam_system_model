@@ -1,10 +1,11 @@
-from gurobipy import *
-import pandas as pd
-import numpy as np
 import ast
+
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
+from gurobipy import *
 
 font = {"size": 24}
 matplotlib.rc("font", **font)

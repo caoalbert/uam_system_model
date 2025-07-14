@@ -35,7 +35,7 @@
         "insurance_cost_factor": 0.035,
         "battery_replacement_cost_per_aircraft_hour": 23.33,
         "administrative_cost_factor": 0.09,
-        "vertiport_operation_cost_per_year": 0
+        "vertiport_operation_cost_per_year": 1000000
     }
 }
 

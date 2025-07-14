@@ -1,11 +1,12 @@
 import json
-from matplotlib.ticker import MultipleLocator
+
 import matplotlib
-from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.gridspec as gridspec
 import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import MultipleLocator
 
 custom_colors = [
     "#c45161",
@@ -32,6 +33,7 @@ color_palette = np.array(
 )
 matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
+
 class CostAnalyzer:
     def __init__(self, path_to_params):
         with open(path_to_params, "r") as file:
@@ -46,7 +48,12 @@ class CostAnalyzer:
         self.total_opex = self._compute_opex(df)
         self.revenue = self._compute_revenue(df)
 
-        return round(self.total_capex,2), round(self.total_opex,2), round(self.revenue,2), round(self.revenue - self.total_opex,2)
+        return (
+            round(self.total_capex, 2),
+            round(self.total_opex, 2),
+            round(self.revenue, 2),
+            round(self.revenue - self.total_opex, 2),
+        )
 
     def _compute_capex(self, df):
         fleet_size = int(df["fleet_size"][0])
@@ -75,14 +82,20 @@ class CostAnalyzer:
             )
         land_cost = []
         for key, value in land_area.items():
-            land_cost.append(value * self.capex["land"]["land_value_per_sqft"][key] * 10000) 
+            land_cost.append(
+                value * self.capex["land"]["land_value_per_sqft"][key] * 10000
+            )
             # print(f"Land cost for {key}: {land_cost[-1]}")
-        land_acquisition_cost = sum(land_cost) 
+        land_acquisition_cost = sum(land_cost)
         self.land_acquisition_cost = land_acquisition_cost
 
         self.construction_cost = sum(self.capex["construction_cost"].values())
 
-        return self.fleet_aquisition_cost + self.construction_cost + self.land_acquisition_cost
+        return (
+            self.fleet_aquisition_cost
+            + self.construction_cost
+            + self.land_acquisition_cost
+        )
 
     def _compute_opex(self, df):
 
@@ -99,7 +112,9 @@ class CostAnalyzer:
             * df["number_of_aircraft_hours"]
         ).sum()
 
-        self.maintenance_cost = (self.opex["maintenance_cost_per_asm"] * df["TAM"] * 4).sum()
+        self.maintenance_cost = (
+            self.opex["maintenance_cost_per_asm"] * df["TAM"] * 4
+        ).sum()
 
         self.insurance_cost = (
             self.fleet_size
@@ -107,12 +122,17 @@ class CostAnalyzer:
             * self.opex["insurance_cost_factor"]
         )
 
-        self.vertiport_operation_cost = self.opex["vertiport_operation_cost_per_year"] * len(
-            df["pads_at_vertiport"][0]
-        )
+        self.vertiport_operation_cost = self.opex[
+            "vertiport_operation_cost_per_year"
+        ] * len(df["pads_at_vertiport"][0])
 
         net_opex = (
-            (self.energy_cost + self.pilot_cost + self.battery_replacement_cost + self.maintenance_cost)
+            (
+                self.energy_cost
+                + self.pilot_cost
+                + self.battery_replacement_cost
+                + self.maintenance_cost
+            )
             * self.multiplier
             + self.insurance_cost
             + self.vertiport_operation_cost
@@ -124,15 +144,19 @@ class CostAnalyzer:
     def _compute_revenue(self, df):
         revenue = df["total_revenue"].sum()
         return revenue * self.multiplier
-    
+
     def plot(self):
         fig = plt.figure(figsize=(20, 10))
         gs = gridspec.GridSpec(1, 2)
         ax1 = fig.add_subplot(gs[0, 0])
         ax2 = fig.add_subplot(gs[0, 1])
         sns.barplot(
-            x=['Fleet Aquisition Cost', 'Construction Cost', 'Land Acquisition Cost'],
-            y=[self.fleet_aquisition_cost, self.construction_cost, self.land_acquisition_cost],
+            x=["Fleet Aquisition Cost", "Construction Cost", "Land Acquisition Cost"],
+            y=[
+                self.fleet_aquisition_cost,
+                self.construction_cost,
+                self.land_acquisition_cost,
+            ],
             ax=ax1,
             palette=color_palette[:3],
         )
@@ -141,9 +165,15 @@ class CostAnalyzer:
         ax1.set_xlabel("Cost Type")
 
         sns.barplot(
-            x=['Energy Cost', 'Pilot Cost', 'Battery Replacement Cost', 
-               'Maintenance Cost', 'Insurance Cost', 'Vertiport Operation Cost',
-               'Administrative Cost'],
+            x=[
+                "Energy Cost",
+                "Pilot Cost",
+                "Battery Replacement Cost",
+                "Maintenance Cost",
+                "Insurance Cost",
+                "Vertiport Operation Cost",
+                "Administrative Cost",
+            ],
             y=[
                 self.energy_cost * self.multiplier,
                 self.pilot_cost * self.multiplier,
@@ -151,7 +181,7 @@ class CostAnalyzer:
                 self.maintenance_cost * self.multiplier,
                 self.insurance_cost,
                 self.vertiport_operation_cost,
-                self.total_opex * self.opex["administrative_cost_factor"]
+                self.total_opex * self.opex["administrative_cost_factor"],
             ],
             ax=ax2,
             palette=color_palette,

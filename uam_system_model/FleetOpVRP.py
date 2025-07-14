@@ -1,12 +1,13 @@
-import pandas as pd
-import numpy as np
-from gurobipy import Model, GRB
-import gurobipy as gp
 import logging
-from tqdm import tqdm
 import multiprocessing
 import re
 from time import time
+
+import gurobipy as gp
+import numpy as np
+import pandas as pd
+from gurobipy import GRB, Model
+from tqdm import tqdm
 
 
 class FleetOpVRP:

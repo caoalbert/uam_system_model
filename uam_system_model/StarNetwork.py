@@ -1,11 +1,12 @@
 import os
+
 import numpy as np
 
 DATA_PATH_1 = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
 DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv")
 
-from .utils.schedule_utils import *
 from .ScheduleGenerator import ScheduleGenerator
+from .utils.schedule_utils import *
 
 
 class StarNetwork:

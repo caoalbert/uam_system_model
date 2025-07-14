@@ -1,10 +1,10 @@
-from matplotlib.ticker import MultipleLocator
 import matplotlib
-from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.gridspec as gridspec
 import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import MultipleLocator
 
 custom_colors = [
     "#c45161",
@@ -38,8 +38,12 @@ def plot_hourly_flight_distribution(StarNetwork, ylim=(0, 25)):
     schedule.loc[schedule["hour"] == 24.0, "hour"] = 0
 
     flight_count = schedule.groupby(["hour", "od"]).size().reset_index(name="count")
-    pivot_table = flight_count.pivot_table(index='hour', columns='od', values='count', fill_value=0)
-    flight_count = pivot_table.reset_index().melt(id_vars='hour', var_name='od', value_name='count')
+    pivot_table = flight_count.pivot_table(
+        index="hour", columns="od", values="count", fill_value=0
+    )
+    flight_count = pivot_table.reset_index().melt(
+        id_vars="hour", var_name="od", value_name="count"
+    )
 
     flight_count["origin"] = flight_count["od"].apply(lambda x: x.split("_")[0])
     flight_count["destination"] = flight_count["od"].apply(lambda x: x.split("_")[1])
@@ -154,21 +158,21 @@ def plot_parameters(StarNetwork):
 
     return fig, (ax1, ax2, ax3)
 
-def plot_travel_time(travel_time_avg, 
-                     vertiports, 
-                     ylim=(0, 100),
-                     ylabel="TNC Trip Time (min)"):
 
-    fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=200)
-    for i in range(1,9):
+def plot_travel_time(
+    travel_time_avg, vertiports, ylim=(0, 100), ylabel="TNC Trip Time (min)"
+):
+
+    fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=300)
+    for i in range(1, 9):
         sns.lineplot(
             x=np.arange(24),
             y=travel_time_avg[0, i, :],
             label=vertiports[i],
             ax=ax[0],
-            color=color_palette[i-1],
+            color=color_palette[i - 1],
             linewidth=1,
-            marker='o',
+            marker="o",
             legend=False,
         )
         sns.lineplot
@@ -177,9 +181,9 @@ def plot_travel_time(travel_time_avg,
             y=travel_time_avg[i, 0, :],
             label=vertiports[i],
             ax=ax[1],
-            color=color_palette[i-1],
+            color=color_palette[i - 1],
             linewidth=1,
-            marker='o'
+            marker="o",
         )
 
     minorLocator = MultipleLocator(1)
@@ -190,15 +194,13 @@ def plot_travel_time(travel_time_avg,
             xticks=[0, 6, 12, 18, 24 - 1],
             xticklabels=["0:00", "6:00", "12:00", "18:00", "24:00"],
             xlim=(-0.2, 23.2),
-            ylim= ylim,
+            ylim=ylim,
         )
         ax[i].xaxis.set_minor_locator(minorLocator)
         ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
     ax[0].set_title("LAX-Spokes")
     ax[1].set_title("Spokes-LAX")
-    fig.text(
-        0.07, 0.5, ylabel, ha="center", va="center", rotation="vertical"
-    )
-    plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left");
+    fig.text(0.07, 0.5, ylabel, ha="center", va="center", rotation="vertical")
+    plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left")
 
     return fig, ax

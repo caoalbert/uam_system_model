@@ -1,6 +1,7 @@
-from uam_system_model.FleetOpVRP import FleetOpVRP
 import numpy as np
 import pandas as pd
+
+from uam_system_model.FleetOpVRP import FleetOpVRP
 
 
 class FleetOpVRPSummary(FleetOpVRP):

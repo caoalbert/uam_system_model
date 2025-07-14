@@ -1,14 +1,14 @@
 import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timedelta
+
+import googlemaps
+import numpy as np
+import pandas as pd
+import pytz
 from geopy.distance import distance
 from geopy.point import Point
-import googlemaps
-import pandas as pd
-import numpy as np
-from datetime import datetime
-from datetime import timedelta
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import pytz
 
 
 class TravelTimeQuery:
@@ -22,10 +22,14 @@ class TravelTimeQuery:
         self.coordinates = coordiantes
 
     def sample_travel_time(self, sample_size=10, n_cores=48):
-        tnc_travel_time = np.zeros((self.num_zones, self.num_zones, self.num_hours, sample_size))
+        tnc_travel_time = np.zeros(
+            (self.num_zones, self.num_zones, self.num_hours, sample_size)
+        )
         first_mile_time = np.zeros((self.num_zones, self.num_hours, sample_size))
         last_mile_time = np.zeros((self.num_zones, self.num_hours, sample_size))
-        first_last_mile_distances = np.zeros((self.num_zones, self.num_hours, sample_size))
+        first_last_mile_distances = np.zeros(
+            (self.num_zones, self.num_hours, sample_size)
+        )
 
         od_indices = list(range(1, len(self.coordinates)))
 
@@ -43,7 +47,12 @@ class TravelTimeQuery:
                 last_mile_time[od_idx] = last_part
                 first_last_mile_distances[od_idx] = distance
 
-        return tnc_travel_time, first_mile_time, last_mile_time, first_last_mile_distances
+        return (
+            tnc_travel_time,
+            first_mile_time,
+            last_mile_time,
+            first_last_mile_distances,
+        )
 
     def _process_od_idx(self, od_idx, n):
         tnc_part = np.zeros((2, self.num_hours, n))  # [dtla→lax, lax→dtla]
@@ -54,7 +63,9 @@ class TravelTimeQuery:
         radius = 2 if od_idx == 7 else 4
 
         # Sample `n` points once per OD index
-        dtla_locations = self.generate_random_points(self.coordinates[od_idx], radius, n)
+        dtla_locations = self.generate_random_points(
+            self.coordinates[od_idx], radius, n
+        )
 
         for hour_offset in range(self.num_hours):
             query_time = self.base_time + timedelta(hours=hour_offset)
@@ -82,11 +93,18 @@ class TravelTimeQuery:
 
                 tnc_part[0, hour, i] = self.convert_to_minutes(travel_time_dtla_to_lax)
                 tnc_part[1, hour, i] = self.convert_to_minutes(travel_time_lax_to_dtla)
-                first_mile_part[hour, i] = self.convert_to_minutes(travel_time_first_mile)
+                first_mile_part[hour, i] = self.convert_to_minutes(
+                    travel_time_first_mile
+                )
                 last_mile_part[hour, i] = self.convert_to_minutes(travel_time_last_mile)
 
-        return od_idx, tnc_part, first_mile_part, last_mile_part, first_last_mile_distance
-
+        return (
+            od_idx,
+            tnc_part,
+            first_mile_part,
+            last_mile_part,
+            first_last_mile_distance,
+        )
 
     def get_travel_time(self, origin, destination, departure_time):
         result = self.gmaps.distance_matrix(
@@ -102,7 +120,7 @@ class TravelTimeQuery:
             return duration_in_traffic["text"]
         else:
             return f"Error: {result['status']}"
-        
+
     @staticmethod
     def haversine_distance(coord1, coord2):
         # Convert latitude and longitude from degrees to radians

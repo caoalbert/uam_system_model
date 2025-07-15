@@ -4,6 +4,8 @@ import matplotlib
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy_financial as npf
+import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator
@@ -18,20 +20,18 @@ custom_colors = [
     "#5e62a9",
     "#434279",
 ]
+color = ["#93003a", "#00429d", "#93c4d2", "#6ebf7c"]
 cmap = LinearSegmentedColormap.from_list("custom_cmap", custom_colors)
-color_palette = np.array(
-    [
-        "#c45161",
-        "#e094a0",
-        "#f2b6c0",
-        "#f2dde1",
-        "#cbc7d8",
-        "#8db7d2",
-        "#5e62a9",
-        "#434279",
-    ]
+matplotlib.rcParams.update(
+    {
+        "legend.fontsize": 14,
+        "legend.handlelength": 2,
+        "xtick.labelsize": 18,
+        "ytick.labelsize": 14,
+        "axes.labelsize": 18,
+        "axes.titlesize": 18,
+    }
 )
-matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
 
 class CostAnalyzer:
@@ -54,6 +54,99 @@ class CostAnalyzer:
             round(self.revenue, 2),
             round(self.revenue - self.total_opex, 2),
         )
+
+    def projection(self, years=15, discount_rate=0.08):
+        rev_by_year = np.full(years, self.revenue)
+        opex_by_year = np.full(years, self.total_opex)
+        net_cash_flow = np.concatenate(
+            ([-self.total_capex], rev_by_year - opex_by_year)
+        )
+
+        discount_factors = 1 / (1 + discount_rate) ** np.arange(years + 1)
+        discounted_cash_flows = net_cash_flow * discount_factors
+
+        ROI = discounted_cash_flows.sum() / self.total_capex
+        NPV = discounted_cash_flows.sum()
+        IRR = npf.irr(net_cash_flow)
+        cum_disc = np.cumsum(discounted_cash_flows)
+        payback_year = next((t for t, v in enumerate(cum_disc) if v >= 0), None)
+
+        fig, ax = self._plot_projection(
+            discount_rate,
+            years,
+            net_cash_flow,
+            discounted_cash_flows,
+            np.cumsum(net_cash_flow),
+            cum_disc,
+        )
+
+        print(f"ROI (undiscounted) ............ : {ROI:.2f}")
+        print(f"NPV @ {discount_rate:.0%} ............. : ${NPV:,.0f}")
+        print(f"IRR ........................... : {IRR:.2%}")
+        print(
+            f"Discounted Payback ............ : " f"{payback_year} years"
+            if payback_year is not None
+            else "Not recovered"
+        )
+
+        return fig, ax, ROI, NPV, IRR, payback_year
+
+    def _plot_projection(
+        self,
+        discount_rate,
+        year,
+        cash_flow,
+        discounted_cashflow,
+        cumulative_cash_flow,
+        cumulative_discounted_cashflow,
+    ):
+
+        df = pd.DataFrame(
+            {
+                "Year": np.arange(year + 1),
+                "Cash Flow": cash_flow,
+                "Discounted CF": discounted_cashflow,
+                "Cumulative CF": cumulative_cash_flow,
+                "Cumulative Discounted CF": cumulative_discounted_cashflow,
+            }
+        )
+
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
+
+        ax.bar(
+            df["Year"],
+            df["Cash Flow"] / 1e6,
+            color=color[1],
+            alpha=0.7,
+            label="Annual Operating Profit",
+        )
+        ax.plot(
+            df["Year"],
+            df["Cumulative CF"] / 1e6,
+            "k--",
+            lw=2,
+            label="Cumulative Cash Flow",
+        )
+        ax.plot(
+            df["Year"],
+            df["Cumulative Discounted CF"] / 1e6,
+            "r",
+            lw=2,
+            label=f"Cumulative Discounted CF ({discount_rate:.0%})",
+        )
+
+        ax.set(
+            xlim=(-0.5, year),
+            xticks=np.arange(0, year + 1, 2),
+            xlabel="Year",
+            ylabel="Million ($)",
+        )
+        ax.legend()
+        ax.xaxis.set_minor_locator(MultipleLocator(1))
+        ax.grid(True, alpha=0.25, linestyle="--", which="both")
+        plt.tight_layout()
+
+        return fig, ax
 
     def _compute_capex(self, df):
         fleet_size = int(df["fleet_size"][0])
@@ -146,49 +239,46 @@ class CostAnalyzer:
         return revenue * self.multiplier
 
     def plot(self):
-        fig = plt.figure(figsize=(20, 10))
-        gs = gridspec.GridSpec(1, 2)
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[0, 1])
+        fig, ax = plt.subplots(ncols=2, figsize=(14, 4), dpi=300)
         sns.barplot(
             x=["Fleet Aquisition Cost", "Construction Cost", "Land Acquisition Cost"],
             y=[
-                self.fleet_aquisition_cost,
-                self.construction_cost,
-                self.land_acquisition_cost,
+                self.fleet_aquisition_cost / 1e6,
+                self.construction_cost / 1e6,
+                self.land_acquisition_cost / 1e6,
             ],
-            ax=ax1,
-            palette=color_palette[:3],
+            ax=ax[0],
+            palette=color[:3],
         )
-        ax1.set_title("Total Capex, Opex, and Revenue")
-        ax1.set_ylabel("Amount ($)")
-        ax1.set_xlabel("Cost Type")
+        ax[0].set_title("CAPEX", fontsize=24)
 
         sns.barplot(
             x=[
-                "Energy Cost",
-                "Pilot Cost",
-                "Battery Replacement Cost",
-                "Maintenance Cost",
-                "Insurance Cost",
-                "Vertiport Operation Cost",
-                "Administrative Cost",
+                "Energy",
+                "Pilot",
+                "Battery \n Replacement",
+                "Maintenance",
+                "Insurance",
+                "Vertiport \n Operation",
+                "Administration",
             ],
             y=[
-                self.energy_cost * self.multiplier,
-                self.pilot_cost * self.multiplier,
-                self.battery_replacement_cost * self.multiplier,
-                self.maintenance_cost * self.multiplier,
-                self.insurance_cost,
-                self.vertiport_operation_cost,
-                self.total_opex * self.opex["administrative_cost_factor"],
+                self.energy_cost * self.multiplier / 1e6,
+                self.pilot_cost * self.multiplier / 1e6,
+                self.battery_replacement_cost * self.multiplier / 1e6,
+                self.maintenance_cost * self.multiplier / 1e6,
+                self.insurance_cost / 1e6,
+                self.vertiport_operation_cost / 1e6,
+                self.total_opex * self.opex["administrative_cost_factor"] / 1e6,
             ],
-            ax=ax2,
-            palette=color_palette,
+            ax=ax[1],
+            palette=custom_colors,
         )
-        ax2.set_title("Opex Breakdown")
-        ax2.set_ylabel("Amount ($)")
-        ax2.set_xlabel("Cost Type")
+        ax[1].set_title("Yearly OPEX", fontsize=24)
+        ax[1].set(yticks=np.arange(0, 11, 1))
 
-        plt.tight_layout()
-        plt.show()
+        for i in range(2):
+            ax[i].set_ylabel("Million ($)")
+            ax[i].tick_params(axis="x", rotation=45)
+
+        return fig, ax

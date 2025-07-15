@@ -71,7 +71,7 @@ class FleetOpVRP:
         # verbose network construction, 1-vehicle problem
         self.verbose = verbose
 
-        run_id = f"M{self.network.month}_D{self.network.day}_V{num_vehicles}_MZPT{max_zero_prep_time}_MTE{int(max_tour_energy)}"
+        run_id = f"M{self.network.month}_D{self.network.day}_V{num_vehicles}_MZPT{max_zero_prep_time}_MTE{int(max_tour_energy)}_B0{beta_0_coefficient}"
         logger = logging.getLogger(f"FleetOpVRP_{run_id}")
         logger.setLevel(logging.INFO)
         if not logger.hasHandlers():

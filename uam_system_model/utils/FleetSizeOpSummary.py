@@ -100,29 +100,29 @@ class FleetSizeOpSummary(FleetSizeOptimizer):
         x1 = self.T
         fig, ax = plt.subplots(figsize=(12, 16), nrows=3, dpi=300)
         sns.lineplot(
-            np.arange(x1),
-            self.all_c.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.all_c.sum(axis=0)[x0:x1],
             label="Charging",
             ax=ax[0],
             color=color[0],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.all_u.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.all_u.sum(axis=0)[x0:x1],
             label="In Flight",
             ax=ax[0],
             color=color[1],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.all_n.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.all_n.sum(axis=0)[x0:x1],
             label="Idling",
             ax=ax[0],
             color=color[2],
         )
         sns.lineplot(
-            np.arange(x1),
-            (
+            x=np.arange(x1),
+            y=(
                 self.all_c.sum(axis=0)[x0:x1]
                 + self.all_n.sum(axis=0)[x0:x1]
                 + self.all_u.sum(axis=0)[x0:x1]
@@ -133,29 +133,29 @@ class FleetSizeOpSummary(FleetSizeOptimizer):
         )
 
         sns.lineplot(
-            np.arange(x1),
-            self.hub_c.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.hub_c.sum(axis=0)[x0:x1],
             label="Charging",
             ax=ax[1],
             color=color[0],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.hub_u.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.hub_u.sum(axis=0)[x0:x1],
             label="In Flight",
             ax=ax[1],
             color=color[1],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.hub_n.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.hub_n.sum(axis=0)[x0:x1],
             label="Idling",
             ax=ax[1],
             color=color[2],
         )
         sns.lineplot(
-            np.arange(x1),
-            (
+            x=np.arange(x1),
+            y=(
                 self.hub_c.sum(axis=0)[x0:x1]
                 + self.hub_n.sum(axis=0)[x0:x1]
                 + self.hub_u.sum(axis=0)[x0:x1]
@@ -166,29 +166,29 @@ class FleetSizeOpSummary(FleetSizeOptimizer):
         )
 
         sns.lineplot(
-            np.arange(x1),
-            self.spoke_c.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.spoke_c.sum(axis=0)[x0:x1],
             label="Charging",
             ax=ax[2],
             color=color[0],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.spoke_u.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.spoke_u.sum(axis=0)[x0:x1],
             label="In Flight",
             ax=ax[2],
             color=color[1],
         )
         sns.lineplot(
-            np.arange(x1),
-            self.spoke_n.sum(axis=0)[x0:x1],
+            x=np.arange(x1),
+            y=self.spoke_n.sum(axis=0)[x0:x1],
             label="Idling",
             ax=ax[2],
             color=color[2],
         )
         sns.lineplot(
-            np.arange(x1),
-            (
+            x=np.arange(x1),
+            y=(
                 self.spoke_c.sum(axis=0)[x0:x1]
                 + self.spoke_n.sum(axis=0)[x0:x1]
                 + self.spoke_u.sum(axis=0)[x0:x1]

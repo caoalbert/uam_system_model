@@ -1,77 +1,101 @@
-import os
-
 import numpy as np
-
-DATA_PATH_1 = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
-DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv")
-
 from .ScheduleGenerator import ScheduleGenerator
-from .utils.schedule_utils import *
 from .utils.visualize import plot_travel_time
 
-
 class StarNetwork:
+    """
+    北京专用：双 Hub（索引 0=PEK, 1=PKX），其余 7 个为 spoke。
+    """
+
     def __init__(
         self,
-        vertiport_names: list,
-        flight_distance_matrix: np.array,
-        flight_time_matrix: np.array,
-        energy_consumption_matrix: np.array,
-        path_schedule: str = DATA_PATH_1,
-        path_seat_capacity: str = DATA_PATH_2,
+        vertiport_names: list,                 # ["PEK","PKX","CBD","ZGC","WJ","TON","LZC","SLT","HDX"]
+        flight_distance_matrix: np.ndarray,    
+        flight_time_matrix: np.ndarray,        
+        energy_consumption_matrix: np.ndarray, 
+        path_schedule: str,                    # 北京 Excel 文件路径（放在原 LAX_ind.csv 的同位置）
     ):
-        """
-        param vertiports: List of vertiport names. The first element is the hub vertiport (LAX)
+        assert len(vertiport_names) == 9, "北京版本期望 9 个节点（2 hub + 7 spoke）"
+        n = len(vertiport_names)
 
-        """
         self.vertiports = vertiport_names
-        self.vertiport_dict = {i: idx for idx, i in enumerate(vertiport_names)}
-        self.vertiport_dict_inv = {idx: i for idx, i in enumerate(vertiport_names)}
+        self.vertiport_dict = {name: idx for idx, name in enumerate(vertiport_names)}
+        self.vertiport_dict_inv = {idx: name for idx, name in enumerate(vertiport_names)}
+        self.hubs = [0, 1]  # 写死为北京双 hub：0=PEK, 1=PKX
+
+        assert flight_distance_matrix.shape == (n, n)
+        assert flight_time_matrix.shape == (n, n)
+        assert energy_consumption_matrix.shape == (n, n)
+
         self.flight_distance_matrix = flight_distance_matrix
         self.flight_time = flight_time_matrix
         self.energy_consumption = energy_consumption_matrix
 
-        self.demand_generator = ScheduleGenerator(path_schedule, path_seat_capacity)
+        # 北京专用的时刻解析器（Excel 的四个 sheet）
+        self.sched = ScheduleGenerator(path_schedule)
+
+        # 输出占位
+        self.schedule = None
+        self.pax_arrival_times = None
 
     def load_demand(
         self,
-        month: int,
-        day: int,
-        vertiport_pmf: np.array,
-        directional_demand: int = None,
-        auto_regressive_alpha: float = 0,
+        month: int,                 
+        day: int,                   
+        vertiport_pmf: np.ndarray,  
+        directional_demand: int,    # 仅当 pmf 为 1D 时需要
+        auto_regressive_alpha: float = 0.0,
         max_waiting_time: int = 5,
         occupancy: int = 4,
-        seed: int = 9,
         fare: float = 3.0,
     ):
-        self.month = month
-        self.day = day
         """
-        Load the demand for a specific day and month.
-        :param month: Month of the year (1-12)
-        :param day: Day of the month (1-31)
-        :param directional_demand: Total demand for the day
-        :return: A tuple containing the schedule, passenger arrival times, and number of passengers per flight.
+        入口：读取北京 Excel → 得到当日 PEK+PKX 合并的到/离港分钟序列 →
+        调用原有调度函数 → 返回 (schedule, pax_arrival_times)
         """
 
-        np.random.seed(seed)
-
-        (schedule, pax_arrival_times,) = self.demand_generator.get_one_day(
-            month=month,
-            day=day,
-            auto_regressive_alpha=auto_regressive_alpha,
-            max_waiting_time=max_waiting_time,
-            directional_demand=directional_demand,
-            occupancy=occupancy,
-            vertiport_pmf=vertiport_pmf,
-            vertiport_dict_inv=self.vertiport_dict_inv,
-            flight_distance_matrix=self.flight_distance_matrix,
-            fare=fare,
+        # 1) 从北京 Excel 解析当日“合并到/离港时序”
+        arr_df, dep_df, yearly_capacity = self.sched.get_one_day_beijing(
+            month=month, day=day
         )
 
-        self.schedule = schedule = schedule
+        # 2) 下游：调用项目原有的调度函数（无需改动 utils/schedule_utils.py）
+        from .utils.schedule_utils import generate_uam_schedule, generate_uam_schedule_v2
+
+        if vertiport_pmf.ndim == 1:
+            # 1D PMF：需要 directional_demand 作为总量
+            schedule, pax_arrival_times = generate_uam_schedule(
+                arr_df,
+                dep_df,
+                yearly_capacity,
+                auto_regressive_alpha,
+                directional_demand,
+                vertiport_pmf,
+                occupancy,
+                max_waiting_time,
+                self.vertiport_dict_inv,
+                self.flight_distance_matrix,
+                fare,
+            )
+        elif vertiport_pmf.ndim == 3:
+            # 3D PMF：自带时段/方向维度，不需要 directional_demand
+            schedule, pax_arrival_times = generate_uam_schedule_v2(
+                arr_df,
+                dep_df,
+                auto_regressive_alpha,
+                vertiport_pmf,
+                occupancy,
+                max_waiting_time,
+                self.vertiport_dict_inv,
+                self.flight_distance_matrix,
+                fare,
+            )
+        else:
+            raise ValueError("vertiport_pmf 维度必须为 1 或 3。")
+
+        self.schedule = schedule
         self.pax_arrival_times = pax_arrival_times
+        return schedule, pax_arrival_times
 
     def plot_flight(self, ylim=(0, 25)):
         schedule = self.schedule.copy()

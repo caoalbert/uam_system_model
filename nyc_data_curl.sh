@@ -6,6 +6,7 @@ URLS=(
   "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2023-01.parquet"
   "https://d37ci6vzurychx.cloudfront.net/trip-data/fhv_tripdata_2023-01.parquet"
   "https://d37ci6vzurychx.cloudfront.net/trip-data/fhvhv_tripdata_2023-01.parquet"
+  "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2023-01.parquet"
 )
 
 # create 01-12 directories

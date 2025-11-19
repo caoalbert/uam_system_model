@@ -211,8 +211,8 @@ class FleetOpVRPSummary(FleetOpVRP):
                 if row["next_origin"] != 999
                 else row["destination"],
             }
-            intervals = intervals.append(interval_1, ignore_index=True)
-            intervals = intervals.append(interval_2, ignore_index=True)
+            intervals = pd.concat([intervals, pd.DataFrame([interval_1])], ignore_index=True)
+            intervals = pd.concat([intervals, pd.DataFrame([interval_2])], ignore_index=True)
 
         results = []
         for loc, group in intervals.groupby("location"):
@@ -251,22 +251,14 @@ class FleetOpVRPSummary(FleetOpVRP):
         df = pd.DataFrame(columns=["hour", "location"])
         for index, row in self.policy.iterrows():
             if row["is_repo"]:
-                df = df.append(
-                    {"hour": row["reposition_hour"], "location": row["next_origin"]},
-                    ignore_index=True,
-                )
-            df = df.append(
-                {"hour": row["revenue_flight_hour"], "location": row["origin"]},
-                ignore_index=True,
-            )
+                df = pd.concat([df, pd.DataFrame([{"hour": row["reposition_hour"], "location": row["next_origin"]}])], ignore_index=True)
+    
+            df = pd.concat([df, pd.DataFrame([{"hour": row["revenue_flight_hour"], "location": row["origin"]}])], ignore_index=True)
             sequence = row["tour_sequence"].split("-")
             if len(sequence) < 2:
                 continue
             for i in range(1, len(sequence) - 1):
-                df = df.append(
-                    {"hour": row["revenue_flight_hour"], "location": row["origin"]},
-                    ignore_index=True,
-                )
+                df = pd.concat([df, pd.DataFrame([{"hour": row["revenue_flight_hour"], "location": row["origin"]}])], ignore_index=True)
 
         ops_per_hour = df.groupby(["hour", "location"]).size().reset_index(name="count")
         max_dep_per_hour = ops_per_hour.groupby("location")["count"].max().reset_index()

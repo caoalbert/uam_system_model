@@ -1,13 +1,13 @@
 [project]
 name = "uam-system-model"
 version = "0.1.0"
-description = "uam_system_model"
+description = "System analysis toolkit for UAM networks"
 authors = [
-    {name = "Shangqing Cao",email = "caoalbert@berkeley.edu"}
+    {name = "Albert Cao"}
 ]
-license = {text = "MIT"}
+license = {text = "BSD 3-Clause"}
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
 ]
 
@@ -15,8 +15,3 @@ dependencies = [
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.group.dev.dependencies]
-autoflake = "^2.3.1"
-pyright = "^1.1.403"
-

@@ -105,7 +105,9 @@ class FleetOpVRPSummary(FleetOpVRP):
 
         total_aircraft_miles = repo_aircraft_miles + revenue_aircraft_miles
 
-        load_factor = self.network.schedule["num_pax"].mean() / 4
+        self.policy['num_pax'] = 1
+
+        load_factor = self.policy['num_pax'].sum() / (int(self.policy["tour_length"].sum()) + int(repositioning_flights)) / 4
 
         summary = {
             "fleet_size": int(fleet_size),

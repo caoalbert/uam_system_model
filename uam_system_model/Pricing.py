@@ -19,14 +19,21 @@ class PricingOptimizer:
         time_resolution,
         num_vehicles,
         uber_travel_time,
+        first_mile_time,
+        last_mile_time,
         uam_flight_time,
         uam_distance_matrix,
-        value_of_time=32.63 / 60,
+        beta_time = -0.0192,
+        beta_cost = -0.0353,
+        uam_transition_time=10,
+        CASM = 0.79,
         verbose=True,
     ):
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
         self.num_vehicles = num_vehicles
+        self.beta_time = beta_time
+        self.beta_cost = beta_cost
 
         pax_arr["passenger_arrival_time_slot"] = np.ceil(
             pax_arr["passenger_arrival_time_s"] / self.time_resolution / 60
@@ -88,7 +95,18 @@ class PricingOptimizer:
             time = row["passenger_arrival_time_slot"]
             time = np.ceil(time / (60 / self.time_resolution)).astype(int) - 1
 
-            t_i_uam.append(uam_flight_time[origin, destination] + 10)
+            if origin == 0:
+                t_i_uam.append(
+                    uam_flight_time[origin, destination]
+                    + last_mile_time[origin, time]
+                    + uam_transition_time
+                )
+            elif destination == 0:
+                t_i_uam.append(
+                    first_mile_time[origin, time]
+                    + uam_flight_time[origin, destination]
+                    + uam_transition_time
+                )
 
             uber_travel_time_i.append(uber_travel_time[origin, destination, time])
 
@@ -96,7 +114,7 @@ class PricingOptimizer:
             uber_fare_i.append(uber_fare[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
-            flight_cost_uam.append(0.79 * 4 * distance)
+            flight_cost_uam.append(CASM * 4 * distance)
 
         uber_travel_time_i = np.array(uber_travel_time_i)
         uber_fare_i = np.array(uber_fare_i)
@@ -106,17 +124,17 @@ class PricingOptimizer:
         non_zero_indices = [i for i, value in enumerate(self.di_bar) if value != 0]
 
         di_bar_selected_x = [self.di_bar[i] for i in non_zero_indices]
-        p_i_bar = [
-            1 / value_of_time for _ in non_zero_indices
-        ]  # 32.63 is the VOT in dollars per minute
-        v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i + 5
 
-        bins = 10
+        v_i_bar_uber = beta_time * uber_travel_time_i + beta_cost * uber_fare_i
+
+        bins = 20
         max_flights = 20
+        eps = 0.01
 
         m = Model("Pricing Problem")
         m.Params.NonConvex = 2
         m.setParam("MIPGap", 0.1)
+        m.setParam("TimeLimit", 8*60*60)  # 3 hours
 
         m._x_vars = m.addVars(self.edges, vtype=GRB.INTEGER, name="x_ij")
         m._x_inverse_vars = m.addVars(
@@ -124,7 +142,7 @@ class PricingOptimizer:
         )
 
         m._theta_uam = m.addVars(
-            len(non_zero_indices), vtype=GRB.CONTINUOUS, name="theta_uam", lb=0, ub=1
+            len(non_zero_indices), vtype=GRB.CONTINUOUS, name="theta_uam", lb=0, ub=1-eps
         )
         m._theta_ln_theta_uam = m.addVars(
             len(non_zero_indices),
@@ -142,7 +160,7 @@ class PricingOptimizer:
             ub=0,
         )
 
-        eps = 1e-4
+
         xs = [1 / bins * i for i in range(bins + 1)]
         x_inverse_s = [i for i in range(max_flights + 1)]
 
@@ -194,7 +212,9 @@ class PricingOptimizer:
         )
         cost_level_of_service = quicksum(
             di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            / beta_cost
+            * m._theta_uam[i_non_zero]
+            * beta_time
             * m._x_inverse_vars[self.edges[i]]
             * self.time_resolution
             / 2
@@ -202,8 +222,8 @@ class PricingOptimizer:
         )
 
         theta_terms = quicksum(
-            di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            -di_bar_selected_x[i_non_zero]
+            / beta_cost
             * (
                 m._theta_ln_theta_uam[i_non_zero]
                 - m._theta_ln_1_minus_theta_uam[i_non_zero]
@@ -212,14 +232,15 @@ class PricingOptimizer:
         )
 
         other_terms = quicksum(
-            di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            -di_bar_selected_x[i_non_zero]
+            / beta_cost
             * m._theta_uam[i_non_zero]
-            * (v_i_bar_uber[i_non_zero] + t_i_uam[i_non_zero])
+            * (v_i_bar_uber[i_non_zero] - beta_time * t_i_uam[i_non_zero])
             for i_non_zero in range(len(di_bar_selected_x))
         )
 
         objective = theta_terms + other_terms + operating_cost + cost_level_of_service
+        # objective = theta_terms + other_terms + operating_cost
 
         m.setObjective(objective, GRB.MINIMIZE)
         if not verbose:
@@ -255,11 +276,10 @@ class PricingOptimizer:
 
         self.v_i_bar_uber = v_i_bar_uber
         self.t_i_uam = t_i_uam
-        self.value_of_time = value_of_time
 
         output_merged["fare"] = output_merged.apply(
             lambda row: self.calc_fare(
-                row, value_of_time, v_i_bar_uber, t_i_uam, self.time_resolution
+                row, beta_time, beta_cost, v_i_bar_uber, t_i_uam, self.time_resolution
             ),
             axis=1,
         )
@@ -299,7 +319,7 @@ class PricingOptimizer:
         return df
 
     @staticmethod
-    def calc_fare(row, value_of_time, v_i_bar_uber, t_i_uam, time_resolution):
+    def calc_fare(row, beta_time, beta_cost, v_i_bar_uber, t_i_uam, time_resolution):
         num_flights = row["num_flights"]
         theta = row["percentage_uam"]
         index = int(row["flight_index"])
@@ -308,13 +328,13 @@ class PricingOptimizer:
         if theta <= 0:
             theta = 0.0001
 
-        fare = -value_of_time * (
+        fare = 1/beta_cost * (
             math.log(theta)
             - math.log(1 - theta)
             + v_i_bar_uber[index]
-            + t_i_uam[index]
-            + time_resolution / 2 / num_flights
+            - beta_time * (t_i_uam[index] + time_resolution / 2 / num_flights)
         )
+
         return fare
 
 

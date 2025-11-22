@@ -133,7 +133,7 @@ class PricingOpSummary(PricingOptimizer):
             xticks=np.arange(0, 49, 12),
             xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
             xlabel="",
-            ylabel=r"UAM Market Share",
+            ylabel=r"$P(U^{UAM} > U^{TNC})$",
             xlim=(0, 48),
             title="UAM Market Share by ODs",
         )

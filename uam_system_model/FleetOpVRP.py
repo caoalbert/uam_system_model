@@ -33,12 +33,14 @@ class FleetOpVRP:
             .agg(
                 count=("origin", "count"),
                 revenue=("revenue", "sum"),
+                num_pax=("num_pax", "sum"),
             )
             .reset_index()
             .rename(columns={"schedule": "time"})
         )
 
         schedule["per_flight_revenue"] = schedule["revenue"] / schedule["count"]
+        schedule["per_flight_num_pax"] = schedule["num_pax"] / schedule["count"]
         self.flight_demand = schedule
 
     def optimize(
@@ -225,6 +227,7 @@ class FleetOpVRP:
                 "count",
                 "duration",
                 "energy_consumption",
+                "num_pax",
                 "tour_revenue",
                 "tour_length",
                 "tour_sequence",
@@ -240,6 +243,7 @@ class FleetOpVRP:
             count = 1
             duration = 0
             total_energy_comp = 0
+            num_pax = 0
             for i in subtour:
                 origin_i = int(demand.loc[i]["origin"])
                 destination_i = int(demand.loc[i]["destination"])
@@ -249,6 +253,7 @@ class FleetOpVRP:
                 tour_sequence = (
                     tour_sequence + self.network.vertiport_dict_inv[origin_i] + "-"
                 )
+                num_pax += demand.loc[i]["per_flight_num_pax"]
             tour_sequence = tour_sequence + self.network.vertiport_dict_inv[destination]
 
             subtour = pd.DataFrame(
@@ -259,6 +264,7 @@ class FleetOpVRP:
                     "count": [count],
                     "duration": [duration],
                     "energy_consumption": [total_energy_comp],
+                    "num_pax": [num_pax],
                     "tour_revenue": [tour_revenue],
                     "tour_length": [len(subtour)],
                     "tour_sequence": [tour_sequence],
@@ -407,6 +413,7 @@ class FleetOpVRP:
                 "count",
                 "duration",
                 "energy_consumption",
+                "num_pax",
                 "tour_length",
                 "cluster_id",
                 "tour_revenue",
@@ -420,6 +427,7 @@ class FleetOpVRP:
                 "count",
                 "duration",
                 "energy_consumption",
+                "num_pax",
                 "tour_length",
                 "cluster_id",
                 "tour_revenue",
@@ -467,6 +475,7 @@ class FleetOpVRP:
                 "count",
                 "duration",
                 "energy_consumption",
+                "num_pax",
                 "tour_length",
                 "cluster_id",
                 "tour_revenue",
@@ -480,6 +489,7 @@ class FleetOpVRP:
                 "count",
                 "duration",
                 "energy_consumption",
+                "num_pax",
                 "tour_length",
                 "cluster_id",
                 "tour_revenue",

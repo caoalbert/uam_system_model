@@ -105,8 +105,6 @@ class FleetOpVRPSummary(FleetOpVRP):
 
         total_aircraft_miles = repo_aircraft_miles + revenue_aircraft_miles
 
-        self.policy['num_pax'] = 1
-
         load_factor = self.policy['num_pax'].sum() / (int(self.policy["tour_length"].sum()) + int(repositioning_flights)) / 4
 
         summary = {
@@ -125,6 +123,7 @@ class FleetOpVRPSummary(FleetOpVRP):
             "TAM": round(total_aircraft_miles, 2),
             "RAM": round(revenue_aircraft_miles, 2),
             "total_revenue": self.policy["tour_revenue"].sum(),
+            "number_of_revenue_passengers": int(self.policy['num_pax'].sum()),
             "average_load_factor": round(load_factor, 4),
         }
 

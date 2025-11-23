@@ -9,6 +9,9 @@ license = {text = "BSD 3-Clause"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "gruobipy>=12.0.2",
+    "numpy_financial>=1.0.0",
+    "geopy>=2.4.1"
 ]
 
 

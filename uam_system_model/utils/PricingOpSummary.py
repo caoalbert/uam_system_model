@@ -24,11 +24,27 @@ matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
 from uam_system_model.Pricing import PricingOptimizer
 
+# import pandas as pd
 
 class PricingOpSummary(PricingOptimizer):
     def __init__(self, StarNetwork, policy):
         super().__init__(StarNetwork)
         self.policy = policy
+    #     all_routing = pd.DataFrame({'passenger_arrival_time_slot': np.repeat(np.arange(49), 16),
+    #                                 'origin_vertiport_id': np.tile(np.concatenate((np.repeat(0, 8), np.arange(1, 9))), 49),
+    #                                 'destination_vertiport_id': np.tile(np.concatenate((np.arange(1, 9),np.repeat(0, 8))), 49),
+    #                             })
+    #     all_routing = pd.merge(policy, all_routing, on=['passenger_arrival_time_slot', 'origin_vertiport_id', 'destination_vertiport_id'], how='outer')
+
+    #     all_routing['markets'] = all_routing.apply(self.identify_market, axis=1)
+
+    #     self.policy = all_routing
+
+    # def identify_market(self, row):
+    #     if row['origin_vertiport_id'] == 0:
+    #         return self.network.vertiport_dict_inv[row['destination_vertiport_id']]
+    #     else:
+    #         return self.network.vertiport_dict_inv[row['origin_vertiport_id']]
 
     def get_summary_statistics(self):
         summary_stats = {}

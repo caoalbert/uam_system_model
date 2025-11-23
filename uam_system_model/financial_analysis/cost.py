@@ -48,6 +48,24 @@ class CostAnalyzer:
         self.total_opex = self._compute_opex(df)
         self.revenue = self._compute_revenue(df)
 
+        balance = {}
+        balance['RASM'] = self.revenue / 365 / df['TAM'][0] / 4
+        balance['CASM'] = {}
+        balance['CASM']['TOTAL'] = self.total_opex / 365 / df['TAM'][0] / 4
+        balance['CASM']['ENERGY'] = (self.energy_cost * self.multiplier) / 365 / df['TAM'][0] / 4
+        balance['CASM']['PILOT'] = (self.pilot_cost * self.multiplier) / 365 / df['TAM'][0] / 4
+        balance['CASM']['BATTERY_REPLACEMENT'] = (self.battery_replacement_cost * self.multiplier) / 365 / df['TAM'][0] / 4
+        balance['CASM']['MAINTENANCE'] = (self.maintenance_cost * self.multiplier) / 365 / df['TAM'][0] / 4
+        balance['CASM']['INSURANCE'] = self.insurance_cost / 365 / df['TAM'][0] / 4
+        balance['CASM']['VERTIPORT_OPERATION'] = self.vertiport_operation_cost / 365 / df['TAM'][0] / 4
+        balance['CASM']['ADMINISTRATION'] = (self.total_opex * self.opex["administrative_cost_factor"]) / 365 / df['TAM'][0] / 4
+        self.balance = balance
+        print("RASM ......................... : ${:.3f}".format(balance['RASM']))
+        print("CASM ......................... : ${:.3f}".format(balance['CASM']['TOTAL']))
+        for key, value in balance['CASM'].items():
+            if key != 'TOTAL':
+                print(f"  - {key:<24} : ${value:.3f}")
+
         return (
             round(self.total_capex, 2),
             round(self.total_opex, 2),

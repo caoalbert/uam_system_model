@@ -19,9 +19,16 @@ class PricingOptimizer:
         time_resolution,
         num_vehicles,
         uber_travel_time,
+        first_mile_time,
+        last_mile_time,
+        first_or_last_distance,
         uam_flight_time,
         uam_distance_matrix,
+        optimality_gap,
         value_of_time=32.63 / 60,
+        uam_transition_time=10,
+        time_limit=1800,
+        CASM=0.79,
         verbose=True,
     ):
         pax_arr = self.network.pax_arrival_times.copy()
@@ -80,6 +87,7 @@ class PricingOptimizer:
         uber_fare_i = []
 
         t_i_uam = []
+        first_last_mile_cost = []
         flight_cost_uam = []
 
         for idx, row in self.pax_arr_grouped.iterrows():
@@ -88,7 +96,23 @@ class PricingOptimizer:
             time = row["passenger_arrival_time_slot"]
             time = np.ceil(time / (60 / self.time_resolution)).astype(int) - 1
 
-            t_i_uam.append(uam_flight_time[origin, destination] + 10)
+            if origin == 0:
+                t_i_uam.append(
+                    uam_flight_time[origin, destination]
+                    + last_mile_time[destination, time]
+                    + uam_transition_time
+                )
+
+            elif destination == 0:
+                t_i_uam.append(
+                    first_mile_time[origin, time]
+                    + uam_flight_time[origin, destination]
+                    + uam_transition_time
+                )
+
+            first_last_mile_cost.append(
+                first_or_last_distance[origin, destination, time] * 2.5
+            )
 
             uber_travel_time_i.append(uber_travel_time[origin, destination, time])
 
@@ -96,7 +120,8 @@ class PricingOptimizer:
             uber_fare_i.append(uber_fare[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
-            flight_cost_uam.append(0.79 * 4 * distance)
+            flight_cost_uam.append(CASM * 4 * distance)
+
 
         uber_travel_time_i = np.array(uber_travel_time_i)
         uber_fare_i = np.array(uber_fare_i)
@@ -109,14 +134,17 @@ class PricingOptimizer:
         p_i_bar = [
             1 / value_of_time for _ in non_zero_indices
         ]  # 32.63 is the VOT in dollars per minute
-        v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i + 5
+        v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i
 
-        bins = 10
+
+        bins = 20
         max_flights = 20
+        eps = 0.01
 
         m = Model("Pricing Problem")
         m.Params.NonConvex = 2
-        m.setParam("MIPGap", 0.1)
+        m.setParam("MIPGap", optimality_gap)
+        m.setParam("TimeLimit", time_limit)
 
         m._x_vars = m.addVars(self.edges, vtype=GRB.INTEGER, name="x_ij")
         m._x_inverse_vars = m.addVars(
@@ -124,7 +152,7 @@ class PricingOptimizer:
         )
 
         m._theta_uam = m.addVars(
-            len(non_zero_indices), vtype=GRB.CONTINUOUS, name="theta_uam", lb=0, ub=1
+            len(non_zero_indices), vtype=GRB.CONTINUOUS, name="theta_uam", lb=0, ub=1-eps
         )
         m._theta_ln_theta_uam = m.addVars(
             len(non_zero_indices),
@@ -142,7 +170,7 @@ class PricingOptimizer:
             ub=0,
         )
 
-        eps = 1e-4
+
         xs = [1 / bins * i for i in range(bins + 1)]
         x_inverse_s = [i for i in range(max_flights + 1)]
 
@@ -259,7 +287,7 @@ class PricingOptimizer:
 
         output_merged["fare"] = output_merged.apply(
             lambda row: self.calc_fare(
-                row, value_of_time, v_i_bar_uber, t_i_uam, self.time_resolution
+                row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, self.time_resolution
             ),
             axis=1,
         )
@@ -299,14 +327,11 @@ class PricingOptimizer:
         return df
 
     @staticmethod
-    def calc_fare(row, value_of_time, v_i_bar_uber, t_i_uam, time_resolution):
+    def calc_fare(row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, time_resolution):
         num_flights = row["num_flights"]
         theta = row["percentage_uam"]
         index = int(row["flight_index"])
-        if theta >= 1:
-            theta = 0.9999
-        if theta <= 0:
-            theta = 0.0001
+        first_last_cost = first_last_mile_cost[index]
 
         fare = -value_of_time * (
             math.log(theta)
@@ -315,7 +340,8 @@ class PricingOptimizer:
             + t_i_uam[index]
             + time_resolution / 2 / num_flights
         )
-        return fare
+
+        return fare - first_last_cost
 
 
 class FlightTask:
@@ -343,12 +369,10 @@ class FlightTask:
 
         next_task_start_time = next_task.start_time
 
-        prep_time = 0
-
         ready_time = (
             self.land_time
             + self.flight_time_matrix[self.destination, next_task.origin]
-            + prep_time
+            + reposition_time
         )
 
         if ready_time <= next_task_start_time:

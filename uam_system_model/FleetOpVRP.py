@@ -287,6 +287,7 @@ class FleetOpVRP:
             axis=1,
         )
         demand["tour_revenue"] = demand.apply(lambda x: x["per_flight_revenue"], axis=1)
+        demand['num_pax'] = demand.apply(lambda x: x['per_flight_num_pax'], axis=1)
 
         for idx in selected_lists:
             subtour = list_subtours[idx]

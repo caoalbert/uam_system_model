@@ -122,7 +122,6 @@ class PricingOptimizer:
             distance = uam_distance_matrix[origin, destination]
             flight_cost_uam.append(CASM * 4 * distance)
 
-
         uber_travel_time_i = np.array(uber_travel_time_i)
         uber_fare_i = np.array(uber_fare_i)
 
@@ -135,7 +134,6 @@ class PricingOptimizer:
             1 / value_of_time for _ in non_zero_indices
         ]  # 32.63 is the VOT in dollars per minute
         v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i
-
 
         bins = 20
         max_flights = 20
@@ -152,7 +150,11 @@ class PricingOptimizer:
         )
 
         m._theta_uam = m.addVars(
-            len(non_zero_indices), vtype=GRB.CONTINUOUS, name="theta_uam", lb=0, ub=1-eps
+            len(non_zero_indices),
+            vtype=GRB.CONTINUOUS,
+            name="theta_uam",
+            lb=0,
+            ub=1 - eps,
         )
         m._theta_ln_theta_uam = m.addVars(
             len(non_zero_indices),
@@ -169,7 +171,6 @@ class PricingOptimizer:
             lb=-float("inf"),
             ub=0,
         )
-
 
         xs = [1 / bins * i for i in range(bins + 1)]
         x_inverse_s = [i for i in range(max_flights + 1)]
@@ -287,7 +288,12 @@ class PricingOptimizer:
 
         output_merged["fare"] = output_merged.apply(
             lambda row: self.calc_fare(
-                row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, self.time_resolution
+                row,
+                value_of_time,
+                v_i_bar_uber,
+                t_i_uam,
+                first_last_mile_cost,
+                self.time_resolution,
             ),
             axis=1,
         )
@@ -327,7 +333,9 @@ class PricingOptimizer:
         return df
 
     @staticmethod
-    def calc_fare(row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, time_resolution):
+    def calc_fare(
+        row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, time_resolution
+    ):
         num_flights = row["num_flights"]
         theta = row["percentage_uam"]
         index = int(row["flight_index"])

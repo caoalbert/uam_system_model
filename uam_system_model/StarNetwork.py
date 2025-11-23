@@ -57,7 +57,10 @@ class StarNetwork:
 
         np.random.seed(seed)
 
-        (schedule, pax_arrival_times,) = self.demand_generator.get_one_day(
+        (
+            schedule,
+            pax_arrival_times,
+        ) = self.demand_generator.get_one_day(
             month=month,
             day=day,
             auto_regressive_alpha=auto_regressive_alpha,

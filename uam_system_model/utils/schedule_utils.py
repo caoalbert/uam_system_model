@@ -428,7 +428,6 @@ def get_autoregressive_pax_count_v2(
 
         assigned_pax = assigned_pax[1:]
         if alpha_index == 0:
-
             output = pd.concat(
                 [
                     output,

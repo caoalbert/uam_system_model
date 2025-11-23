@@ -6,7 +6,6 @@ from uam_system_model.FleetOpVRP import FleetOpVRP
 
 class FleetOpVRPSummary(FleetOpVRP):
     def __init__(self, StarNetwork, policy, non_linear_battery_charging=True):
-
         super().__init__(StarNetwork)
         if non_linear_battery_charging:
             self.cs = np.cumsum(
@@ -105,7 +104,11 @@ class FleetOpVRPSummary(FleetOpVRP):
 
         total_aircraft_miles = repo_aircraft_miles + revenue_aircraft_miles
 
-        load_factor = self.policy['num_pax'].sum() / (int(self.policy["tour_length"].sum()) + int(repositioning_flights)) / 4
+        load_factor = (
+            self.policy["num_pax"].sum()
+            / (int(self.policy["tour_length"].sum()) + int(repositioning_flights))
+            / 4
+        )
 
         summary = {
             "fleet_size": int(fleet_size),
@@ -123,7 +126,7 @@ class FleetOpVRPSummary(FleetOpVRP):
             "TAM": round(total_aircraft_miles, 2),
             "RAM": round(revenue_aircraft_miles, 2),
             "total_revenue": self.policy["tour_revenue"].sum(),
-            "number_of_revenue_passengers": int(self.policy['num_pax'].sum()),
+            "number_of_revenue_passengers": int(self.policy["num_pax"].sum()),
             "average_load_factor": round(load_factor, 4),
         }
 
@@ -212,8 +215,12 @@ class FleetOpVRPSummary(FleetOpVRP):
                 if row["next_origin"] != 999
                 else row["destination"],
             }
-            intervals = pd.concat([intervals, pd.DataFrame([interval_1])], ignore_index=True)
-            intervals = pd.concat([intervals, pd.DataFrame([interval_2])], ignore_index=True)
+            intervals = pd.concat(
+                [intervals, pd.DataFrame([interval_1])], ignore_index=True
+            )
+            intervals = pd.concat(
+                [intervals, pd.DataFrame([interval_2])], ignore_index=True
+            )
 
         results = []
         for loc, group in intervals.groupby("location"):
@@ -252,14 +259,53 @@ class FleetOpVRPSummary(FleetOpVRP):
         df = pd.DataFrame(columns=["hour", "location"])
         for index, row in self.policy.iterrows():
             if row["is_repo"]:
-                df = pd.concat([df, pd.DataFrame([{"hour": row["reposition_hour"], "location": row["next_origin"]}])], ignore_index=True)
-    
-            df = pd.concat([df, pd.DataFrame([{"hour": row["revenue_flight_hour"], "location": row["origin"]}])], ignore_index=True)
+                df = pd.concat(
+                    [
+                        df,
+                        pd.DataFrame(
+                            [
+                                {
+                                    "hour": row["reposition_hour"],
+                                    "location": row["next_origin"],
+                                }
+                            ]
+                        ),
+                    ],
+                    ignore_index=True,
+                )
+
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame(
+                        [
+                            {
+                                "hour": row["revenue_flight_hour"],
+                                "location": row["origin"],
+                            }
+                        ]
+                    ),
+                ],
+                ignore_index=True,
+            )
             sequence = row["tour_sequence"].split("-")
             if len(sequence) < 2:
                 continue
             for i in range(1, len(sequence) - 1):
-                df = pd.concat([df, pd.DataFrame([{"hour": row["revenue_flight_hour"], "location": row["origin"]}])], ignore_index=True)
+                df = pd.concat(
+                    [
+                        df,
+                        pd.DataFrame(
+                            [
+                                {
+                                    "hour": row["revenue_flight_hour"],
+                                    "location": row["origin"],
+                                }
+                            ]
+                        ),
+                    ],
+                    ignore_index=True,
+                )
 
         ops_per_hour = df.groupby(["hour", "location"]).size().reset_index(name="count")
         max_dep_per_hour = ops_per_hour.groupby("location")["count"].max().reset_index()

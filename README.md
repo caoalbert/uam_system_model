@@ -5,8 +5,9 @@
 
 ## 🧭 Description
 
-- `network`: Base layer — defines schedule, vertiports, and matrices  
-- `fleetop`: Optimization logic — builds on `network`  
-- `fleetopsummary`: Reporting and analysis — depends on `network` and the output file from `fleetop`
+- `StarNetwork`: Construct a star network with a hub at a commercial airport (LAX).
+- `FleetSizeOp`: Flow-based optimizaiton for the fleet sizing and spill minimization problem. Source code to paper [Fleet Size and Spill for UAM Operation under Uncertain Demand](https://drive.google.com/file/d/15euv8Tt9Gd0pq_6k1Vfvm2Jb8ZkFP8Rr/view), [International Conference on Research in Air Transportation (ICRAT)](https://www.icrat.org/previous-conferences/11th-international-conference/papers/), 2024.
+- `FleetOpVRP`: Vehicle routing formulation of the UAM fleet scheduling problem considering non-linear charging time. 
+- `Pricing`: Dynamic pricing for UAM based on travel time advantage and value of time.
 
-Each layer builds on the one before it. Generate network -> run optimization -> analytics
+More detailed documention to come. Please feel free to email [Albert Cao](caoalbert@berkeley.edu) if you have any questions!

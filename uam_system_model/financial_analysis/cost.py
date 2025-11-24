@@ -203,20 +203,26 @@ class CostAnalyzer:
                     required_pads[key] = max(required_pads[key], value)
 
         for key, value in required_pads.items():
-            land_area[key] = (
-                self.capex["land"]["land_area_beta_0"]
-                + value * self.capex["land"]["land_area_beta_1"]
-            )
+            if value > 0:
+                land_area[key] = (
+                    self.capex["land"]["land_area_beta_0"]
+                    + value * self.capex["land"]["land_area_beta_1"]
+                )
+            else:
+                land_area[key] = 0
+
         land_cost = []
         for key, value in land_area.items():
             land_cost.append(
                 value * self.capex["land"]["land_value_per_sqft"][key] * 10000
             )
-            # print(f"Land cost for {key}: {land_cost[-1]}")
-        land_acquisition_cost = sum(land_cost)
-        self.land_acquisition_cost = land_acquisition_cost
+        self.land_acquisition_cost = sum(land_cost)
 
-        self.construction_cost = sum(self.capex["construction_cost"].values())
+        construction_cost = 0
+        for key in required_pads.keys():
+            if required_pads[key] > 0:
+                construction_cost += self.capex["construction_cost"][key]
+        self.construction_cost = construction_cost
 
         return (
             self.fleet_aquisition_cost

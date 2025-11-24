@@ -263,6 +263,9 @@ def generate_uam_schedule(
 
 
 def build_schedules(queue, max_waiting_time, occupancy):
+    if len(queue) == 0:
+        return np.array([]), np.array([])
+
     queue = np.sort(queue)
     departure_time_aircraft = []
     num_pax_per_flight = []

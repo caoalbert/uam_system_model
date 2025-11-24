@@ -63,6 +63,8 @@ class FleetOpVRPSummary(FleetOpVRP):
             self.network.vertiport_dict_inv[i]: parking_pads[
                 parking_pads["vertiport_idx"] == i
             ]["num_pads"].values[0]
+            if not parking_pads[parking_pads["vertiport_idx"] == i].empty
+            else 0
             for i in range(len(self.network.vertiport_dict))
         }
 
@@ -71,6 +73,8 @@ class FleetOpVRPSummary(FleetOpVRP):
             self.network.vertiport_dict_inv[i]: max_takeoff_per_hour[
                 max_takeoff_per_hour["location"] == i
             ]["count"].values[0]
+            if not max_takeoff_per_hour[max_takeoff_per_hour["location"] == i].empty
+            else 0
             for i in range(len(self.network.vertiport_dict))
         }
 

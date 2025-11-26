@@ -6,6 +6,8 @@ from scipy.stats import skewnorm
 
 warnings.filterwarnings("ignore")
 
+# v2 is for knowing the total passenger demand from each spoke
+# v1 is for assuming a fixed number of daily passengers from each spoke
 
 def generate_uam_schedule_v2(
     lax_flight_arr,
@@ -133,46 +135,46 @@ def generate_uam_schedule_v2(
 
 
 def generate_uam_schedule(
-    lax_flight_arr,
-    lax_flight_dep,
-    total_lax_seats,
+    hub_flight_arr,
+    hub_flight_dep,
+    total_hub_seats,
     auto_regressive_alpha,
     directional_demand,
     vertiport_pmf,
     occupancy,
     max_waiting_time,
     vertiport_dict_inv,
+    hub_name,
     flight_distance_matrix,
     fare,
 ):
-    yearly_arr_capacity, yearly_dep_capacity = total_lax_seats
+    yearly_arr_capacity, yearly_dep_capacity = total_hub_seats
     # Calculate pax demand per scheduled flight
-    lax_flight_arr["capacity"] = (
-        lax_flight_arr["capacity"] / yearly_arr_capacity * directional_demand * 365
+    hub_flight_arr["capacity"] = (
+        hub_flight_arr["capacity"] / yearly_arr_capacity * directional_demand * 365
     )
-    lax_flight_dep["capacity"] = (
-        lax_flight_dep["capacity"] / yearly_dep_capacity * directional_demand * 365
+    hub_flight_dep["capacity"] = (
+        hub_flight_dep["capacity"] / yearly_dep_capacity * directional_demand * 365
     )
 
-    lax_flight_arr = get_autoregressive_pax_count(lax_flight_arr, auto_regressive_alpha)
-    lax_flight_dep = get_autoregressive_pax_count(lax_flight_dep, auto_regressive_alpha)
-
+    hub_flight_arr = get_autoregressive_pax_count(hub_flight_arr, auto_regressive_alpha)
+    hub_flight_dep = get_autoregressive_pax_count(hub_flight_dep, auto_regressive_alpha)
     # Generate passenger arrival times
     lax_dtla = np.empty((1,))
-    for i in range(lax_flight_arr.shape[0]):
-        num_pax = lax_flight_arr.iloc[i, 1]
+    for i in range(hub_flight_arr.shape[0]):
+        num_pax = hub_flight_arr.iloc[i, 1]
         delta_t = skewnorm.rvs(3, loc=31, scale=np.sqrt(2 * 1.5**2), size=num_pax)
-        delta_t += lax_flight_arr.iloc[i, 0]
+        delta_t += hub_flight_arr.iloc[i, 0]
         lax_dtla = np.concatenate([lax_dtla, delta_t])
     lax_dtla[lax_dtla >= 1440] -= 1440
     lax_dtla = np.sort(lax_dtla)
 
     dtla_lax = np.empty((1,))
-    for i in range(lax_flight_dep.shape[0]):
-        num_pax = lax_flight_dep.iloc[i, 1]
+    for i in range(hub_flight_dep.shape[0]):
+        num_pax = hub_flight_dep.iloc[i, 1]
         delta_t = skewnorm.rvs(3, loc=93, scale=40, size=num_pax)
         delta_t += np.random.normal(loc=10, scale=5 / 3, size=num_pax)
-        delta_t = lax_flight_dep.iloc[i, 0] - delta_t
+        delta_t = hub_flight_dep.iloc[i, 0] - delta_t
         dtla_lax = np.concatenate([dtla_lax, delta_t])
     dtla_lax[dtla_lax < 0] += 1440
     dtla_lax = np.sort(dtla_lax)
@@ -189,13 +191,13 @@ def generate_uam_schedule(
     origin_name = np.concatenate(
         [
             np.array([vertiport_dict_inv[int(i)] for i in origin]),
-            np.repeat("LAX", len(lax_dtla)),
+            np.repeat(hub_name, len(lax_dtla)),
         ],
         axis=0,
     )
     destination_name = np.concatenate(
         [
-            np.repeat("LAX", len(dtla_lax)),
+            np.repeat(hub_name, len(dtla_lax)),
             np.array([vertiport_dict_inv[int(i)] for i in destination]),
         ],
         axis=0,
@@ -223,7 +225,7 @@ def generate_uam_schedule(
                 pd.DataFrame(
                     {
                         "schedule": dtla_lax_sche,
-                        "od": f"{vertiport_dict_inv[i]}_LAX",
+                        "od": f"{vertiport_dict_inv[i]}_{hub_name}",
                         "num_pax": dtla_lax_num_pax_flight,
                         "revenue": dtla_lax_num_pax_flight
                         * flight_distance_matrix[i, 0]
@@ -244,7 +246,7 @@ def generate_uam_schedule(
                 pd.DataFrame(
                     {
                         "schedule": lax_dtla_sche,
-                        "od": f"LAX_{vertiport_dict_inv[i]}",
+                        "od": f"{hub_name}_{vertiport_dict_inv[i]}",
                         "num_pax": lax_dtla_num_pax_flight,
                         "revenue": lax_dtla_num_pax_flight
                         * flight_distance_matrix[0, i]
@@ -375,17 +377,17 @@ def inverse_cdf(cumulative_pmf, num_samples):
 
 
 def get_autoregressive_pax_count_v2(
-    lax_flight, vertiport_pmf, direction, auto_regressive_alpha
+    legacy_flight_schedule, vertiport_pmf, direction, auto_regressive_alpha
 ):
-    if direction == "LAX-Spoke":
+    if direction == "Apt-Spoke":
         alpha_index = 0
-    elif direction == "Spoke-LAX":
+    elif direction == "Spoke-Apt":
         alpha_index = 1
 
-    lax_flight["time_interval"] = lax_flight["time"] // 60
-    lax_flight_grouped = lax_flight.groupby("time_interval").sum("capacity")
-    lax_flight_grouped = (
-        lax_flight_grouped.merge(
+    legacy_flight_schedule["time_interval"] = legacy_flight_schedule["time"] // 60
+    legacy_flight_grouped = legacy_flight_schedule.groupby("time_interval").sum("capacity")
+    legacy_flight_grouped = (
+        legacy_flight_grouped.merge(
             pd.DataFrame({"time_interval": np.arange(0, 24, 1), "demand": 0}),
             on="time_interval",
             how="outer",
@@ -396,17 +398,17 @@ def get_autoregressive_pax_count_v2(
     )
 
     # Calculate flight pax density over hourly rate
-    lax_flight_merged = lax_flight.merge(lax_flight_grouped, on="time_interval")
-    lax_flight_merged["density"] = (
-        lax_flight_merged["capacity_x"] / lax_flight_merged["capacity_y"]
+    legacy_flight_merged = legacy_flight_schedule.merge(legacy_flight_grouped, on="time_interval")
+    legacy_flight_merged["density"] = (
+        legacy_flight_merged["capacity_x"] / legacy_flight_merged["capacity_y"]
     )
-    lax_flight_merged["cum_density"] = lax_flight_merged.groupby("time_interval")[
+    legacy_flight_merged["cum_density"] = legacy_flight_merged.groupby("time_interval")[
         "density"
     ].cumsum()
 
     # Generate one realization of hourly rate
-    lax_dtla_hourly_uam_demand = (
-        vertiport_pmf[alpha_index] * lax_flight_grouped["capacity"].values
+    legacy_dtla_hourly_uam_demand = (
+        vertiport_pmf[alpha_index] * legacy_flight_grouped["capacity"].values
     )
 
     output = pd.DataFrame(columns=["time", "capacity", "origin", "destination"])

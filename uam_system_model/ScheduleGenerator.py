@@ -145,6 +145,7 @@ class ScheduleGenerator:
                 occupancy,
                 max_waiting_time,
                 vertiport_dict_inv,
+                "LAX",
                 flight_distance_matrix,
                 fare,
             )

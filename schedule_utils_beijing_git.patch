@@ -1,0 +1,374 @@
+diff --git a/uam_system_model/utils/schedule_utils.py b/uam_system_model/utils/schedule_utils.py
+index 6a3f0f0..6b7b7b7 100644
+--- a/uam_system_model/utils/schedule_utils.py
++++ b/uam_system_model/utils/schedule_utils.py
+@@ -1,7 +1,8 @@
+ import warnings
+ 
+ import numpy as np
+ import pandas as pd
+ from scipy.stats import skewnorm
++from typing import List
+ 
+ warnings.filterwarnings("ignore")
+ 
+@@ -11,19 +12,36 @@ def generate_uam_schedule_v2(
+     auto_regressive_alpha,
+     vertiport_pmf,
+     occupancy,
+     max_waiting_time,
+     vertiport_dict_inv,
+     flight_distance_matrix,
+     fare,
+-):
+-    lax_flight_arr = get_autoregressive_pax_count_v2(
+-        lax_flight_arr, vertiport_pmf, "LAX-Spoke", auto_regressive_alpha
+-    )
+-    lax_flight_dep = get_autoregressive_pax_count_v2(
+-        lax_flight_dep, vertiport_pmf, "Spoke-LAX", auto_regressive_alpha
+-    )
++    hubs: List[int] = None,
++):
++    # 默认单 hub=0；北京传 [0,1]（PEK, PKX）
++    hubs = hubs or [0]
++    # 按 hub 展开（不再写死 LAX）
++    arr_list, dep_list = [], []
++    for h in hubs:
++        hub_name = vertiport_dict_inv[h]
++        arr_list.append(
++            get_autoregressive_pax_count_v2(
++                lax_flight_arr, vertiport_pmf, f"{hub_name}-Spoke", auto_regressive_alpha, hub_index=h
++            )
++        )
++        dep_list.append(
++            get_autoregressive_pax_count_v2(
++                lax_flight_dep, vertiport_pmf, f"Spoke-{hub_name}", auto_regressive_alpha, hub_index=h
++            )
++        )
++    lax_flight_arr = pd.concat(arr_list, ignore_index=True)
++    lax_flight_dep = pd.concat(dep_list, ignore_index=True)
+ 
+     origin_name = []
+     destination_name = []
+ 
+     # Generate passenger arrival times
+     lax_dtla = np.empty((1,))
+     for idx, row in lax_flight_arr.iterrows():
+-        num_pax = row["capacity"]
++        num_pax = int(row["capacity"])
+         delta_t = skewnorm.rvs(3, loc=31, scale=np.sqrt(2 * 1.5**2), size=num_pax)
+         delta_t += row["time"]
+         lax_dtla = np.concatenate([lax_dtla, delta_t])
+-        origin_name += [0] * num_pax
+-        destination_name += [row["destination"]] * num_pax
++        # 不再写死 0：使用行内 origin/destination
++        origin_name += [int(row["origin"])] * num_pax
++        destination_name += [int(row["destination"])] * num_pax
+     lax_dtla[lax_dtla >= 1440] -= 1440
+     lax_dtla = lax_dtla[1:]
+ 
+     dtla_lax = np.empty((1,))
+     for idx, row in lax_flight_dep.iterrows():
+-        num_pax = row["capacity"]
++        num_pax = int(row["capacity"])
+         delta_t = skewnorm.rvs(3, loc=93, scale=40, size=num_pax)
+         delta_t += np.random.normal(loc=10, scale=5 / 3, size=num_pax)
+         delta_t = row["time"] - delta_t
+         dtla_lax = np.concatenate([dtla_lax, delta_t])
+-        origin_name += [row["origin"]] * num_pax
+-        destination_name += [0] * num_pax
++        origin_name += [int(row["origin"])] * num_pax
++        destination_name += [int(row["destination"])] * num_pax
+     dtla_lax[dtla_lax < 0] += 1440
+     dtla_lax = dtla_lax[1:]
+ 
+@@ -42,45 +60,57 @@ def generate_uam_schedule_v2(
+         .reset_index(drop=True)
+     )
+ 
+-    final_schedule = pd.DataFrame(columns=["schedule", "od", "num_pax", "revenue"])
+-
+-    for i in range(1, vertiport_pmf.shape[1]):
+-        # CBD to LAX vertiport
+-        dtla_lax_sche, dtla_lax_num_pax_flight = build_schedules(
+-            paxArrivalDf[paxArrivalDf["origin_vertiport_id"] == i][
+-                "passenger_arrival_time_s"
+-            ].values
+-            / 60,
+-            max_waiting_time,
+-            occupancy,
+-        )
+-        final_schedule = pd.concat(
+-            [
+-                final_schedule,
+-                pd.DataFrame(
+-                    {
+-                        "schedule": dtla_lax_sche,
+-                        "od": f"{vertiport_dict_inv[i]}_LAX",
+-                        "num_pax": dtla_lax_num_pax_flight,
+-                        "revenue": dtla_lax_num_pax_flight
+-                        * flight_distance_matrix[i, 0]
+-                        * fare,
+-                    }
+-                ),
+-            ],
+-            ignore_index=True,
+-        )
+-
+-        # LAX TO CBD vertiport
+-        lax_dtla_sche, lax_dtla_num_pax_flight = build_schedules(
+-            paxArrivalDf[paxArrivalDf["destination_vertiport_id"] == i][
+-                "passenger_arrival_time_s"
+-            ].values
+-            / 60,
+-            max_waiting_time,
+-            occupancy,
+-        )
+-        final_schedule = pd.concat(
+-            [
+-                final_schedule,
+-                pd.DataFrame(
+-                    {
+-                        "schedule": lax_dtla_sche,
+-                        "od": f"LAX_{vertiport_dict_inv[i]}",
+-                        "num_pax": lax_dtla_num_pax_flight,
+-                        "revenue": lax_dtla_num_pax_flight
+-                        * flight_distance_matrix[0, i]
+-                        * fare,
+-                    }
+-                ),
+-            ],
+-            ignore_index=True,
+-        )
++    final_schedule = pd.DataFrame(columns=["schedule", "od", "num_pax", "revenue"])
++    N = vertiport_pmf.shape[1]
++    spokes = [i for i in range(1, N) if i not in hubs] if 0 in hubs else [i for i in range(N) if i not in hubs]
++
++    for h in hubs:
++        hub_name = vertiport_dict_inv[h]
++        # spoke -> hub（显式按目的地是 hub 过滤）
++        for i in spokes:
++            dtla_lax_sche, dtla_lax_num_pax_flight = build_schedules(
++                paxArrivalDf[
++                    (paxArrivalDf["origin_vertiport_id"] == i)
++                    & (paxArrivalDf["destination_vertiport_id"] == h)
++                ]["passenger_arrival_time_s"].values
++                / 60,
++                max_waiting_time,
++                occupancy,
++            )
++            final_schedule = pd.concat(
++                [
++                    final_schedule,
++                    pd.DataFrame(
++                        {
++                            "schedule": dtla_lax_sche,
++                            "od": f"{vertiport_dict_inv[i]}_{hub_name}",
++                            "num_pax": dtla_lax_num_pax_flight,
++                            "revenue": dtla_lax_num_pax_flight
++                            * flight_distance_matrix[i, h]
++                            * fare,
++                        }
++                    ),
++                ],
++                ignore_index=True,
++            )
++
++        # hub -> spoke（显式按起点是 hub 过滤）
++        for i in spokes:
++            lax_dtla_sche, lax_dtla_num_pax_flight = build_schedules(
++                paxArrivalDf[
++                    (paxArrivalDf["origin_vertiport_id"] == h)
++                    & (paxArrivalDf["destination_vertiport_id"] == i)
++                ]["passenger_arrival_time_s"].values
++                / 60,
++                max_waiting_time,
++                occupancy,
++            )
++            final_schedule = pd.concat(
++                [
++                    final_schedule,
++                    pd.DataFrame(
++                        {
++                            "schedule": lax_dtla_sche,
++                            "od": f"{hub_name}_{vertiport_dict_inv[i]}",
++                            "num_pax": lax_dtla_num_pax_flight,
++                            "revenue": lax_dtla_num_pax_flight
++                            * flight_distance_matrix[h, i]
++                            * fare,
++                        }
++                    ),
++                ],
++                ignore_index=True,
++            )
+ 
+     final_schedule = final_schedule.sort_values(by=["schedule", "od"]).reset_index(
+         drop=True
+     )
+ 
+@@ -96,7 +128,7 @@ def generate_uam_schedule(
+     vertiport_pmf,
+     occupancy,
+     max_waiting_time,
+     vertiport_dict_inv,
+     flight_distance_matrix,
+     fare,
+-):
++    hubs: List[int] = None,
++):
+     yearly_arr_capacity, yearly_dep_capacity = total_lax_seats
+     # Calculate pax demand per scheduled flight
+     lax_flight_arr["capacity"] = (
+         lax_flight_arr["capacity"] / yearly_arr_capacity * directional_demand * 365
+     )
+@@ -151,7 +183,13 @@ def generate_uam_schedule(
+     )
+ 
+     final_schedule = pd.DataFrame(columns=["schedule", "od", "num_pax", "revenue"])
+ 
+-    for i in range(1, len(vertiport_pmf)):
++    # 默认单 hub=0；北京传 [0,1]（PEK, PKX）
++    hubs = hubs or [0]
++    N = len(vertiport_pmf)
++    spokes = [i for i in range(1, N) if i not in hubs] if 0 in hubs else [i for i in range(N) if i not in hubs]
++
++    for h in hubs:
++        hub_name = vertiport_dict_inv[h]
+         # CBD to LAX vertiport
+-        dtla_lax_sche, dtla_lax_num_pax_flight = build_schedules(
+-            dtla_lax[origin == i], max_waiting_time, occupancy
+-        )
+-        final_schedule = pd.concat(
+-            [
+-                final_schedule,
+-                pd.DataFrame(
+-                    {
+-                        "schedule": dtla_lax_sche,
+-                        "od": f"{vertiport_dict_inv[i]}_LAX",
+-                        "num_pax": dtla_lax_num_pax_flight,
+-                        "revenue": dtla_lax_num_pax_flight
+-                        * flight_distance_matrix[i, 0]
+-                        * fare,
+-                    }
+-                ),
+-            ],
+-            ignore_index=True,
+-        )
+-
+-        # LAX TO CBD vertiport
+-        lax_dtla_sche, lax_dtla_num_pax_flight = build_schedules(
+-            lax_dtla[destination == i], max_waiting_time, occupancy
+-        )
+-        final_schedule = pd.concat(
+-            [
+-                final_schedule,
+-                pd.DataFrame(
+-                    {
+-                        "schedule": lax_dtla_sche,
+-                        "od": f"LAX_{vertiport_dict_inv[i]}",
+-                        "num_pax": lax_dtla_num_pax_flight,
+-                        "revenue": lax_dtla_num_pax_flight
+-                        * flight_distance_matrix[0, i]
+-                        * fare,
+-                    }
+-                ),
+-            ],
+-            ignore_index=True,
+-        )
++        for i in spokes:
++            dtla_lax_sche, dtla_lax_num_pax_flight = build_schedules(
++                dtla_lax[origin == i], max_waiting_time, occupancy
++            )
++            final_schedule = pd.concat(
++                [
++                    final_schedule,
++                    pd.DataFrame(
++                        {
++                            "schedule": dtla_lax_sche,
++                            "od": f"{vertiport_dict_inv[i]}_{hub_name}",
++                            "num_pax": dtla_lax_num_pax_flight,
++                            "revenue": dtla_lax_num_pax_flight
++                            * flight_distance_matrix[i, h]
++                            * fare,
++                        }
++                    ),
++                ],
++                ignore_index=True,
++            )
++
++            # hub TO CBD vertiport
++            lax_dtla_sche, lax_dtla_num_pax_flight = build_schedules(
++                lax_dtla[destination == i], max_waiting_time, occupancy
++            )
++            final_schedule = pd.concat(
++                [
++                    final_schedule,
++                    pd.DataFrame(
++                        {
++                            "schedule": lax_dtla_sche,
++                            "od": f"{hub_name}_{vertiport_dict_inv[i]}",
++                            "num_pax": lax_dtla_num_pax_flight,
++                            "revenue": lax_dtla_num_pax_flight
++                            * flight_distance_matrix[h, i]
++                            * fare,
++                        }
++                    ),
++                ],
++                ignore_index=True,
++            )
+ 
+     final_schedule = final_schedule.sort_values(by=["schedule", "od"]).reset_index(
+         drop=True
+     )
+ 
+@@ -274,7 +312,7 @@ def get_autoregressive_pax_count_v2(
+-    lax_flight, vertiport_pmf, direction, auto_regressive_alpha
++    lax_flight, vertiport_pmf, direction, auto_regressive_alpha, hub_index: int
+ ):
+-    if direction == "LAX-Spoke":
+-        alpha_index = 0
+-    elif direction == "Spoke-LAX":
+-        alpha_index = 1
++    # 方向用标签判定："{Hub}-Spoke" / "Spoke-{Hub}"
++    if direction.endswith("-Spoke"):
++        alpha_index = 0
++    elif direction.startswith("Spoke-"):
++        alpha_index = 1
+ 
+     lax_flight["time_interval"] = lax_flight["time"] // 60
+     lax_flight_grouped = lax_flight.groupby("time_interval").sum("capacity")
+@@ -313,7 +351,7 @@ def get_autoregressive_pax_count_v2(
+         if alpha_index == 0:
+ 
+             output = pd.concat(
+                 [
+                     output,
+                     pd.DataFrame(
+                         {
+                             "time": lax_flight["time"],
+                             "capacity": assigned_pax,
+-                            "origin": 0,
++                            "origin": hub_index,
+                             "destination": od,
+                         }
+                     ),
+                 ],
+                 ignore_index=True,
+             )
+         elif alpha_index == 1:
+             output = pd.concat(
+                 [
+                     output,
+                     pd.DataFrame(
+                         {
+                             "time": lax_flight["time"],
+                             "capacity": assigned_pax,
+                             "origin": od,
+-                            "destination": 0,
++                            "destination": hub_index,
+                         }
+                     ),
+                 ],
+                 ignore_index=True,
+             )
+     return output

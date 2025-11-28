@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -5,6 +7,10 @@ import pandas as pd
 from .ScheduleGeneratorBJ import ScheduleGenerator
 from .utils.schedule_utils import generate_uam_schedule
 from .utils.visualize import plot_travel_time
+
+DATA_PATH_1 = os.path.join(
+    os.path.dirname(__file__), "data", "PEK-PKX-Schedules20251023.xlsx"
+)
 
 
 class StarNetwork:
@@ -22,7 +28,6 @@ class StarNetwork:
         flight_distance_matrix: np.ndarray,
         flight_time_matrix: np.ndarray,
         energy_consumption_matrix: np.ndarray,
-        path_schedule: str,
     ):
         # 基础网络信息
         self.vertiports = list(vertiport_names)
@@ -36,7 +41,7 @@ class StarNetwork:
         self.energy_consumption = energy_consumption_matrix
 
         # 读 Excel 的调度生成器
-        self.sched = ScheduleGenerator(path_schedule)
+        self.sched = ScheduleGenerator(DATA_PATH_1)
 
         # hub / spoke 信息
         self.hub_set = {"PEK", "PKX"}

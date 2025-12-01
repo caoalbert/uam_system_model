@@ -88,7 +88,6 @@ def plot_parameters(StarNetwork):
         title="Distance",
     )
     ax1.invert_yaxis()
-    plt.grid(False)
 
     sns.heatmap(
         StarNetwork.flight_time * 5,
@@ -104,7 +103,6 @@ def plot_parameters(StarNetwork):
         title="Flight Time",
     )
     ax2.invert_yaxis()
-    plt.grid(False)
 
     sns.heatmap(
         StarNetwork.energy_consumption,
@@ -123,6 +121,7 @@ def plot_parameters(StarNetwork):
 
     for ax in [ax1, ax2, ax3]:
         ax.title.set_fontsize(30)
+        ax.grid(False)
     plt.tight_layout()
 
     return fig, (ax1, ax2, ax3)

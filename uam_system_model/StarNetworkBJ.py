@@ -77,6 +77,9 @@ class StarNetwork:
             3. 调用 schedule_utils.generate_uam_schedule 生成单 hub 调度；
             4. 将多个 hub 的结果拼接起来。
         """
+        self.month = month
+        self.day = day
+
         hub_names = list(hub_names)
 
         all_schedule = []
@@ -135,7 +138,10 @@ class StarNetwork:
             all_schedule.append(schedule_h)
             all_pax.append(pax_h)
 
-        self.schedule = pd.concat(all_schedule, ignore_index=True)
+        schedule = pd.concat(all_schedule, ignore_index=True)
+        schedule['revenue'] = schedule['revenue'] / schedule['num_pax'] / 3 * 1.6 * 2.62 * schedule['num_pax'] / 7.07
+
+        self.schedule = schedule
         self.pax_arrival_times = pd.concat(all_pax, ignore_index=True)
 
         return self.schedule, self.pax_arrival_times

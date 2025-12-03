@@ -56,8 +56,8 @@ def plot_travel_time(
         )
         ax[i].xaxis.set_minor_locator(minorLocator)
         ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
-    ax[0].set_title("LAX-Spokes")
-    ax[1].set_title("Spokes-LAX")
+    ax[0].set_title("APT-Spokes")
+    ax[1].set_title("Spokes-APT")
     fig.text(0.07, 0.5, ylabel, ha="center", va="center", rotation="vertical")
     plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left")
 

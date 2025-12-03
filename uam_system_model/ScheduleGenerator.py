@@ -5,7 +5,7 @@ from .utils.schedule_utils import (generate_uam_schedule,
 
 
 class ScheduleGenerator:
-    def __init__(self, path_schedule, path_seatcap):
+    def __init__(self, path_schedule, path_seatcap, region):
         self.lax_flight = pd.read_csv(path_schedule)
         self.lax_flight = self.lax_flight[
             (self.lax_flight["USER_CLASS"] == "C")
@@ -82,10 +82,10 @@ class ScheduleGenerator:
         )
         self.lax_flight = self.lax_flight.dropna(subset=["capacity"])
 
-        arr_capacity = self.lax_flight[(self.lax_flight["ARR_LOCID"] == " LAX")][
+        arr_capacity = self.lax_flight[(self.lax_flight["ARR_LOCID"] == f" {region}")][
             "capacity"
         ].sum()
-        dep_capacity = self.lax_flight[(self.lax_flight["DEP_LOCID"] == " LAX")][
+        dep_capacity = self.lax_flight[(self.lax_flight["DEP_LOCID"] == f" {region}")][
             "capacity"
         ].sum()
 

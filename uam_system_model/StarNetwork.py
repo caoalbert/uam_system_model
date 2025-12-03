@@ -2,9 +2,6 @@ import os
 
 import numpy as np
 
-DATA_PATH_1 = os.path.join(os.path.dirname(__file__), "data", "LAX_ind.csv")
-DATA_PATH_2 = os.path.join(os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv")
-
 from .ScheduleGenerator import ScheduleGenerator
 from .utils.schedule_utils import *
 from .utils.visualize import plot_travel_time
@@ -17,13 +14,31 @@ class StarNetwork:
         flight_distance_matrix: np.array,
         flight_time_matrix: np.array,
         energy_consumption_matrix: np.array,
-        path_schedule: str = DATA_PATH_1,
-        path_seat_capacity: str = DATA_PATH_2,
+        region="LAX",
     ):
         """
         param vertiports: List of vertiport names. The first element is the hub vertiport (LAX)
 
         """
+        if region not in ["LAX", "JFK"]:
+            raise ValueError("Region must be either 'LAX' or 'JFK'")
+
+        if region == "LAX":
+            path_schedule = os.path.join(
+                os.path.dirname(__file__), "data", "LAX_ind.csv"
+            )
+            path_seat_capacity = os.path.join(
+                os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv"
+            )
+
+        if region == "JFK":
+            path_schedule = os.path.join(
+                os.path.dirname(__file__), "data", "JFK_ind.csv"
+            )
+            path_seat_capacity = os.path.join(
+                os.path.dirname(__file__), "data", "T_F41SCHEDULE_B43.csv"
+            )
+
         self.vertiports = vertiport_names
         self.vertiport_dict = {i: idx for idx, i in enumerate(vertiport_names)}
         self.vertiport_dict_inv = {idx: i for idx, i in enumerate(vertiport_names)}
@@ -31,7 +46,9 @@ class StarNetwork:
         self.flight_time = flight_time_matrix
         self.energy_consumption = energy_consumption_matrix
 
-        self.demand_generator = ScheduleGenerator(path_schedule, path_seat_capacity)
+        self.demand_generator = ScheduleGenerator(
+            path_schedule, path_seat_capacity, region
+        )
 
     def load_demand(
         self,

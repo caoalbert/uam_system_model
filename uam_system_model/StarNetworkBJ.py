@@ -69,6 +69,7 @@ class StarNetwork:
         max_waiting_time: int = 5,
         occupancy: int = 4,
         fare: float = 3.0,
+        seed: int = 0,
     ):
         """
         对于 hub_names 中的每一个 hub（例如 ["PEK", "PKX"]）：
@@ -79,6 +80,8 @@ class StarNetwork:
         """
         self.month = month
         self.day = day
+
+        np.random.seed(seed)
 
         hub_names = list(hub_names)
 
@@ -139,7 +142,15 @@ class StarNetwork:
             all_pax.append(pax_h)
 
         schedule = pd.concat(all_schedule, ignore_index=True)
-        schedule['revenue'] = schedule['revenue'] / schedule['num_pax'] / 3 * 1.6 * 2.62 * schedule['num_pax'] / 7.07
+        schedule["revenue"] = (
+            schedule["revenue"]
+            / schedule["num_pax"]
+            / 3
+            * 1.6
+            * 2.62
+            * schedule["num_pax"]
+            / 7.07
+        )
 
         self.schedule = schedule
         self.pax_arrival_times = pd.concat(all_pax, ignore_index=True)

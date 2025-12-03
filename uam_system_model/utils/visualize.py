@@ -107,6 +107,7 @@ def plot_parameters(StarNetwork):
     sns.heatmap(
         StarNetwork.energy_consumption,
         annot=True,
+        fmt=".1f",
         cmap=cmap,
         ax=ax3,
         cbar_kws={"label": "Energy Consumption (% SoC)"},

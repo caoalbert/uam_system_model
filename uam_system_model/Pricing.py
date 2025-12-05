@@ -19,6 +19,7 @@ class PricingOptimizer:
         time_resolution,
         num_vehicles,
         uber_travel_time,
+        uber_fare,
         first_mile_time,
         last_mile_time,
         first_or_last_distance,
@@ -83,7 +84,7 @@ class PricingOptimizer:
         ) = assignment_network.populate_network()
 
         uber_travel_time_i = []
-        uber_fare = np.array([0, 50, 62, 78, 57, 77, 57, 57, 45])
+        # uber_fare = np.array([0, 50, 62, 78, 57, 77, 57, 57, 45])
         uber_fare_i = []
 
         t_i_uam = []
@@ -116,8 +117,11 @@ class PricingOptimizer:
 
             uber_travel_time_i.append(uber_travel_time[origin, destination, time])
 
-            od_idx = max(origin, destination)
-            uber_fare_i.append(uber_fare[od_idx])
+            if len(uber_fare.shape) == 1:
+                od_idx = max(origin, destination)
+                uber_fare_i.append(uber_fare[od_idx])
+            elif len(uber_fare.shape) == 3:
+                uber_fare_i.append(uber_fare[origin, destination, time])
 
             distance = uam_distance_matrix[origin, destination]
             flight_cost_uam.append(CASM * 4 * distance)
@@ -130,13 +134,24 @@ class PricingOptimizer:
         non_zero_indices = [i for i, value in enumerate(self.di_bar) if value != 0]
 
         di_bar_selected_x = [self.di_bar[i] for i in non_zero_indices]
-        p_i_bar = [
-            1 / value_of_time for _ in non_zero_indices
-        ]  # 32.63 is the VOT in dollars per minute
+    
+        if isinstance(value_of_time, float):
+            p_i_bar = [
+                1 / value_of_time for _ in non_zero_indices
+            ]  # 32.63 is the VOT in dollars per minute
+
+        else:
+            p_i_bar = []
+            for idx, row in self.pax_arr_grouped.iterrows():
+                origin = row["origin_vertiport_id"]
+                destination = row["destination_vertiport_id"]
+                od_idx = max(origin, destination)
+                p_i_bar.append(1 / (value_of_time[od_idx] / 60))
+
         v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i
 
         bins = 20
-        max_flights = 20
+        max_flights = num_vehicles
         eps = 0.01
 
         m = Model("Pricing Problem")
@@ -289,7 +304,7 @@ class PricingOptimizer:
         output_merged["fare"] = output_merged.apply(
             lambda row: self.calc_fare(
                 row,
-                value_of_time,
+                1/p_i_bar[int(row["flight_index"])],
                 v_i_bar_uber,
                 t_i_uam,
                 first_last_mile_cost,

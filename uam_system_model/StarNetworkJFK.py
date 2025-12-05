@@ -32,7 +32,9 @@ class StarNetwork:
                     auto_regressive_alpha=0,
                     max_waiting_time=5,
                     occupancy=4,
-                    fare=3):
+                    fare=3,
+                    seed=9):
+        np.random.seed(seed)
         (
             schedule,
             pax_arrival_times,

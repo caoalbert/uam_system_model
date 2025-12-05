@@ -157,17 +157,11 @@ class StarNetwork:
 
         return self.schedule, self.pax_arrival_times
 
-    # ------------------------------------------------------------------
-    #  航班量可视化：按 hub 画 hub↔spokes 的每小时航班数量
-    # ------------------------------------------------------------------
-    def plot_flight(self, hub_name: str, ylim=(0, 25)):
-        """
-        北京版画图：
-            左图：hub -> spokes
-            右图：spokes -> hub
-        """
-        if self.schedule is None:
-            raise RuntimeError("请先调用 load_demand 生成 self.schedule")
+    def plot_flight(self, ylim=(0, 25)):
+
+        # 假定：前两个是 hub，后面都是 spoke
+        hubs = self.vertiports[:2]
+        spokes = self.vertiports[2:]
 
         schedule = self.schedule.copy()
         schedule["origin"] = schedule["od"].str.split("_").str[0]
@@ -175,66 +169,65 @@ class StarNetwork:
         schedule["hour"] = (schedule["schedule"] // 60).astype(int)
         schedule.loc[schedule["hour"] == 24, "hour"] = 0
 
-        # 只保留与该 hub 有关的航班
-        schedule = schedule[
-            (schedule["origin"] == hub_name) | (schedule["destination"] == hub_name)
-        ].copy()
+        figs = []
+        axes_list = []
 
-        # hubs & spokes 列表
-        hub_set = {"PEK", "PKX"}
-        spokes = [v for v in self.vertiports if v not in hub_set]
+        for hub_name in hubs:
+            # 只保留与当前 hub 有关的航班（hub <-> 任意点）
+            sub = schedule[
+                (schedule["origin"] == hub_name)
+                | (schedule["destination"] == hub_name)
+            ].copy()
 
-        # hub -> spokes（origin==hub）
-        out_df = schedule[schedule["origin"] == hub_name]
-        out_counts = (
-            out_df.groupby(["hour", "destination"]).size().reset_index(name="count")
-        )
+            # 构造“局部视角”：
+            #   [hub] + [7 个 spokes] + [1 个 dummy 占位]
+            local_vertiports = [hub_name] + spokes + ["_nolegend_"]
+            n_local = len(local_vertiports)  # 应该是 9
 
-        # spokes -> hub（destination==hub）
-        in_df = schedule[schedule["destination"] == hub_name]
-        in_counts = in_df.groupby(["hour", "origin"]).size().reset_index(name="count")
+            # 名称 -> 局部索引
+            local_idx = {name: idx for idx, name in enumerate(local_vertiports)}
 
-        hours = np.arange(24)
+            # 1. 先全部置为 0（没航班=0，线是连续的）
+            input_to_viz = np.zeros((n_local, n_local, 24), dtype=float)
 
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+            for _, row in sub.iterrows():
+                o = row["origin"]
+                d = row["destination"]
+                h = int(row["hour"])
 
-        # 左图：hub -> spokes
-        ax = axes[0]
-        for sp in spokes:
-            counts = out_counts[out_counts["destination"] == sp]
-            y = np.zeros_like(hours, dtype=int)
-            if not counts.empty:
-                y[counts["hour"].values] = counts["count"].values
-            ax.plot(hours, y, marker="o", label=sp)
-        ax.set_title(f"{hub_name}-Spokes")
-        ax.set_xlabel("Time of Day (hour)")
-        ax.set_ylabel("Number of Flights")
-        ax.set_ylim(*ylim)
-        ax.set_xticks([0, 6, 12, 18, 24])
+                if (o == hub_name and d in spokes) or (d == hub_name and o in spokes):
+                    i = local_idx[o]
+                    j = local_idx[d]
+                else:
+                    continue
 
-        # 右图：spokes -> hub
-        ax = axes[1]
-        for sp in spokes:
-            counts = in_counts[in_counts["origin"] == sp]
-            y = np.zeros_like(hours, dtype=int)
-            if not counts.empty:
-                y[counts["hour"].values] = counts["count"].values
-            ax.plot(hours, y, marker="o", label=sp)
-        ax.set_title(f"Spokes-{hub_name}")
-        ax.set_xlabel("Time of Day (hour)")
-        ax.set_ylim(*ylim)
-        ax.set_xticks([0, 6, 12, 18, 24])
+                input_to_viz[i, j, h] += 1.0
 
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, title="Vertiports", loc="center right")
+            # 2. 把 dummy 端点那一行/一列设成 nan，这样不会画出这条全是0的线
+            dummy_idx = local_idx["_nolegend_"]
+            input_to_viz[dummy_idx, :, :] = np.nan
+            input_to_viz[:, dummy_idx, :] = np.nan
 
-        fig.tight_layout(rect=[0, 0, 0.9, 1])
 
-        return fig, axes
+            # 调用底层原始的 plot_travel_time（不改它）
+            fig, ax = plot_travel_time(
+                input_to_viz,
+                local_vertiports,
+                ylim=ylim,
+                ylabel="Number of Flights",
+            )
 
-    # ------------------------------------------------------------------
-    #  乘客 OD 热度图（仍然复用原来的 plot_travel_time）
-    # ------------------------------------------------------------------
+            # --- 覆盖 plot_travel_time 的标题 ---
+            hub_short = hub_name   # 例如 "PEK", "PKX"
+
+            ax[0].set_title(f"{hub_short}-Spokes")    # 左图：hub → spokes
+            ax[1].set_title(f"Spokes-{hub_short}")    # 右图：spokes → hub
+
+            figs.append(fig)
+            axes_list.append(ax)
+
+        return figs, axes_list
+
     def plot_pax(self, ylim=(0, 25)):
         """
         使用已有的 plot_travel_time，将日均每小时 OD 乘客数量可视化。

@@ -26,12 +26,15 @@ class PricingOptimizer:
         uam_flight_time,
         uam_distance_matrix,
         optimality_gap,
-        value_of_time=32.63 / 60,
+        value_of_time,
         uam_transition_time=10,
         time_limit=1800,
         CASM=0.79,
         verbose=True,
     ):
+        if isinstance(value_of_time, int) or isinstance(value_of_time, float):
+            value_of_time = [value_of_time for _ in range(len(self.network.vertiport_dict))]
+        
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
         self.num_vehicles = num_vehicles
@@ -90,6 +93,8 @@ class PricingOptimizer:
         t_i_uam = []
         first_last_mile_cost = []
         flight_cost_uam = []
+        p_i_bar = []
+
 
         for idx, row in self.pax_arr_grouped.iterrows():
             origin = row["origin_vertiport_id"]
@@ -122,6 +127,8 @@ class PricingOptimizer:
                 uber_fare_i.append(uber_fare[od_idx])
             elif len(uber_fare.shape) == 3:
                 uber_fare_i.append(uber_fare[origin, destination, time])
+
+            p_i_bar.append(1 / value_of_time[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
             flight_cost_uam.append(CASM * 4 * distance)

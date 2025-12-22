@@ -27,6 +27,7 @@ class PricingOptimizer:
         uam_distance_matrix,
         optimality_gap,
         value_of_time,
+        utility_type,
         beta_time = -0.0192,
         beta_cost = -0.0353,
         uam_transition_time=10,
@@ -156,7 +157,7 @@ class PricingOptimizer:
 
         bins = 20
         max_flights = num_vehicles
-        eps = 0.01
+        eps = 0.05
 
         m = Model("Pricing Problem")
         m.Params.NonConvex = 2
@@ -240,16 +241,17 @@ class PricingOptimizer:
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
         )
-        cost_level_of_service = quicksum(
-            di_bar_selected_x[i_non_zero]
-            / beta_cost_i[i_non_zero]
-            * m._theta_uam[i_non_zero]
-            * beta_time_i[i_non_zero]
-            * m._x_inverse_vars[self.edges[i]]
-            * self.time_resolution
-            / 2
-            for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
-        )
+        # cost_level_of_service = quicksum(
+        #     di_bar_selected_x[i_non_zero]
+        #     / beta_cost_i[i_non_zero]
+        #     * m._theta_uam[i_non_zero]
+        #     * beta_time_i[i_non_zero]
+        #     * m._x_inverse_vars[self.edges[i]]
+        #     * self.time_resolution
+        #     / 2
+        #     for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
+        # )
+
 
         theta_terms = quicksum(
             -di_bar_selected_x[i_non_zero]
@@ -269,10 +271,24 @@ class PricingOptimizer:
             for i_non_zero in range(len(di_bar_selected_x))
         )
 
-        objective = theta_terms + other_terms + operating_cost + cost_level_of_service
-        # objective = theta_terms + other_terms + operating_cost
+        # objective = theta_terms + other_terms + operating_cost + cost_level_of_service
+        objective = theta_terms + other_terms + operating_cost
 
         m.setObjective(objective, GRB.MINIMIZE)
+
+        max_v = max_flights
+        for i, idx in enumerate(non_zero_indices):
+            current_los_costs = []
+            factor = (di_bar_selected_x[i] * beta_time_i[i] * self.time_resolution) / (2 * beta_cost_i[i])
+            for k in range(max_v + 1):
+                if k == 0:
+                    current_los_costs.append(1e6) # Penalty for no service
+                else:
+                    current_los_costs.append(factor * (1.0 / k))
+        
+            m.setPWLObj(m._x_vars[self.edges[idx]], range(max_v + 1), current_los_costs)
+
+
         if not verbose:
             m.setParam("OutputFlag", 0)
         m.update()
@@ -410,7 +426,7 @@ class FlightTask:
             + reposition_time
         )
 
-        if ready_time <= next_task_start_time:
+        if next_task_start_time - ready_time >= 0 and next_task_start_time - ready_time <= 12:
             return True
         else:
             return False

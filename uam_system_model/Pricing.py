@@ -27,6 +27,8 @@ class PricingOptimizer:
         uam_distance_matrix,
         optimality_gap,
         value_of_time,
+        beta_time = -0.0192,
+        beta_cost = -0.0353,
         uam_transition_time=10,
         time_limit=1800,
         CASM=0.79,
@@ -38,6 +40,8 @@ class PricingOptimizer:
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
         self.num_vehicles = num_vehicles
+        self.beta_time = [beta_cost * value_of_time[i] / 60 for i in range(len(self.network.vertiport_dict))]
+        self.beta_cost = [beta_cost for _ in range(len(self.network.vertiport_dict))]
 
         pax_arr["passenger_arrival_time_slot"] = np.ceil(
             pax_arr["passenger_arrival_time_s"] / self.time_resolution / 60
@@ -93,7 +97,8 @@ class PricingOptimizer:
         t_i_uam = []
         first_last_mile_cost = []
         flight_cost_uam = []
-        p_i_bar = []
+        beta_time_i = []
+        beta_cost_i = []
 
 
         for idx, row in self.pax_arr_grouped.iterrows():
@@ -126,9 +131,11 @@ class PricingOptimizer:
                 od_idx = max(origin, destination)
                 uber_fare_i.append(uber_fare[od_idx])
             elif len(uber_fare.shape) == 3:
+                od_idx = max(origin, destination)
                 uber_fare_i.append(uber_fare[origin, destination, time])
 
-            p_i_bar.append(1 / value_of_time[od_idx])
+            beta_time_i.append(self.beta_time[od_idx])
+            beta_cost_i.append(self.beta_cost[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
             flight_cost_uam.append(CASM * 4 * distance)
@@ -141,21 +148,11 @@ class PricingOptimizer:
         non_zero_indices = [i for i, value in enumerate(self.di_bar) if value != 0]
 
         di_bar_selected_x = [self.di_bar[i] for i in non_zero_indices]
+
+        beta_time_i = np.array(beta_time_i)
+        beta_cost_i = np.array(beta_cost_i)
     
-        if isinstance(value_of_time, float):
-            p_i_bar = [
-                1 / value_of_time for _ in non_zero_indices
-            ]  # 32.63 is the VOT in dollars per minute
-
-        else:
-            p_i_bar = []
-            for idx, row in self.pax_arr_grouped.iterrows():
-                origin = row["origin_vertiport_id"]
-                destination = row["destination_vertiport_id"]
-                od_idx = max(origin, destination)
-                p_i_bar.append(1 / (value_of_time[od_idx] / 60))
-
-        v_i_bar_uber = -uber_travel_time_i - p_i_bar * uber_fare_i
+        v_i_bar_uber = beta_time_i * uber_travel_time_i + beta_cost_i * uber_fare_i
 
         bins = 20
         max_flights = num_vehicles
@@ -245,7 +242,9 @@ class PricingOptimizer:
         )
         cost_level_of_service = quicksum(
             di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            / beta_cost_i[i_non_zero]
+            * m._theta_uam[i_non_zero]
+            * beta_time_i[i_non_zero]
             * m._x_inverse_vars[self.edges[i]]
             * self.time_resolution
             / 2
@@ -253,8 +252,8 @@ class PricingOptimizer:
         )
 
         theta_terms = quicksum(
-            di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            -di_bar_selected_x[i_non_zero]
+            / beta_cost_i[i_non_zero]
             * (
                 m._theta_ln_theta_uam[i_non_zero]
                 - m._theta_ln_1_minus_theta_uam[i_non_zero]
@@ -263,14 +262,15 @@ class PricingOptimizer:
         )
 
         other_terms = quicksum(
-            di_bar_selected_x[i_non_zero]
-            / p_i_bar[i_non_zero]
+            -di_bar_selected_x[i_non_zero]
+            / beta_cost_i[i_non_zero]
             * m._theta_uam[i_non_zero]
-            * (v_i_bar_uber[i_non_zero] + t_i_uam[i_non_zero])
+            * (v_i_bar_uber[i_non_zero] - beta_time_i[i_non_zero] * t_i_uam[i_non_zero])
             for i_non_zero in range(len(di_bar_selected_x))
         )
 
         objective = theta_terms + other_terms + operating_cost + cost_level_of_service
+        # objective = theta_terms + other_terms + operating_cost
 
         m.setObjective(objective, GRB.MINIMIZE)
         if not verbose:
@@ -311,7 +311,8 @@ class PricingOptimizer:
         output_merged["fare"] = output_merged.apply(
             lambda row: self.calc_fare(
                 row,
-                1/p_i_bar[int(row["flight_index"])],
+                beta_time_i,
+                beta_cost_i,
                 v_i_bar_uber,
                 t_i_uam,
                 first_last_mile_cost,
@@ -354,25 +355,29 @@ class PricingOptimizer:
 
         return df
 
+
     @staticmethod
-    def calc_fare(
-        row, value_of_time, v_i_bar_uber, t_i_uam, first_last_mile_cost, time_resolution
-    ):
+    def calc_fare(row, beta_time, beta_cost, v_i_bar_uber, t_i_uam, first_last_mile_cost, time_resolution):
         num_flights = row["num_flights"]
         theta = row["percentage_uam"]
         index = int(row["flight_index"])
         first_last_cost = first_last_mile_cost[index]
+        beta_time = beta_time[index]
+        beta_cost = beta_cost[index]
 
-        fare = -value_of_time * (
+        if theta >= 1:
+            theta = 0.9999
+        if theta <= 0:
+            theta = 0.0001
+
+        fare = 1/beta_cost * (
             math.log(theta)
             - math.log(1 - theta)
             + v_i_bar_uber[index]
-            + t_i_uam[index]
-            + time_resolution / 2 / num_flights
+            - beta_time * (t_i_uam[index] + time_resolution / 2 / num_flights)
         )
 
         return fare - first_last_cost
-
 
 class FlightTask:
     def __init__(

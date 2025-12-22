@@ -158,7 +158,6 @@ class StarNetwork:
         return self.schedule, self.pax_arrival_times
 
     def plot_flight(self, ylim=(0, 25)):
-
         # 假定：前两个是 hub，后面都是 spoke
         hubs = self.vertiports[:2]
         spokes = self.vertiports[2:]
@@ -175,8 +174,7 @@ class StarNetwork:
         for hub_name in hubs:
             # 只保留与当前 hub 有关的航班（hub <-> 任意点）
             sub = schedule[
-                (schedule["origin"] == hub_name)
-                | (schedule["destination"] == hub_name)
+                (schedule["origin"] == hub_name) | (schedule["destination"] == hub_name)
             ].copy()
 
             # 构造“局部视角”：
@@ -208,7 +206,6 @@ class StarNetwork:
             input_to_viz[dummy_idx, :, :] = np.nan
             input_to_viz[:, dummy_idx, :] = np.nan
 
-
             # 调用底层原始的 plot_travel_time（不改它）
             fig, ax = plot_travel_time(
                 input_to_viz,
@@ -218,10 +215,10 @@ class StarNetwork:
             )
 
             # --- 覆盖 plot_travel_time 的标题 ---
-            hub_short = hub_name   # 例如 "PEK", "PKX"
+            hub_short = hub_name  # 例如 "PEK", "PKX"
 
-            ax[0].set_title(f"{hub_short}-Spokes")    # 左图：hub → spokes
-            ax[1].set_title(f"Spokes-{hub_short}")    # 右图：spokes → hub
+            ax[0].set_title(f"{hub_short}-Spokes")  # 左图：hub → spokes
+            ax[1].set_title(f"Spokes-{hub_short}")  # 右图：spokes → hub
 
             figs.append(fig)
             axes_list.append(ax)

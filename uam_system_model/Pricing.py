@@ -234,7 +234,7 @@ class PricingOptimizer:
             )
 
         # Flow conservation constraints
-        for n in tqdm(self.nodes):
+        for n in self.nodes:
             m.addConstr(
                 sum(m._x_vars[i, j] for i, j in self.edges if j == n)
                 - sum(m._x_vars[i, j] for i, j in self.edges if i == n)

@@ -27,13 +27,15 @@ class StarNetwork:
 
         self.demand_generator = ScheduleGenerator()
 
-    def load_demand(self, 
-                    arrival_rate_by_vertiport,
-                    auto_regressive_alpha=0,
-                    max_waiting_time=5,
-                    occupancy=4,
-                    fare=3,
-                    seed=9):
+    def load_demand(
+        self,
+        arrival_rate_by_vertiport,
+        auto_regressive_alpha=0,
+        max_waiting_time=5,
+        occupancy=4,
+        fare=3,
+        seed=9,
+    ):
         np.random.seed(seed)
         (
             schedule,

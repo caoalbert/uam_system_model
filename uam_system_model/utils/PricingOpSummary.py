@@ -56,11 +56,16 @@ class PricingOpSummary(PricingOptimizer):
 
         return summary_stats
 
-    def plot_average_rasm(self, dpi=300):
+    def plot_average_rasm(self, ax=None, dpi=300):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
+            
         df_grouped = self.policy.groupby(["passenger_arrival_time_slot"])[
             "rev_per_mile"
         ].mean()
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+
         sns.lineplot(
             x=np.arange(len(df_grouped)),
             y=df_grouped.values,
@@ -87,6 +92,7 @@ class PricingOpSummary(PricingOptimizer):
             data=self.policy,
             x="passenger_arrival_time_slot",
             hue="markets",
+            hue_order=self.network.vertiports[1:],
             y="rev_per_mile",
             marker="o",
             err_style=None,
@@ -107,6 +113,34 @@ class PricingOpSummary(PricingOptimizer):
 
         return fig, ax
 
+    def plot_fare_by_od(self, dpi=300):
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        sns.lineplot(
+            data=self.policy,
+            x="passenger_arrival_time_slot",
+            y="fare",
+            hue="markets",
+            hue_order=self.network.vertiports[1:],
+            err_style=None,
+            legend=True,
+            marker="o",
+            palette=custom_colors,
+            ax=ax,
+        )
+        ax.set(
+            xticks=np.arange(0, 49, 12),
+            xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
+            xlabel="",
+            ylabel="Fare ($)",
+            xlim=(0, 48),
+            title="Average Fare by ODs",
+        )
+        ax.xaxis.set_major_locator(MultipleLocator(2))
+        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.legend(bbox_to_anchor=(1.02, 0.85), loc="upper left", borderaxespad=0.0)
+
+        return fig, ax
+
     def plot_revenue_by_od(self, dpi=300):
         fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         sns.lineplot(
@@ -114,6 +148,7 @@ class PricingOpSummary(PricingOptimizer):
             x="passenger_arrival_time_slot",
             y="total_revenue",
             hue="markets",
+            hue_order=self.network.vertiports[1:],
             err_style=None,
             legend=True,
             marker="o",
@@ -134,13 +169,17 @@ class PricingOpSummary(PricingOptimizer):
 
         return fig, ax
 
-    def plot_uam_share_by_od(self, dpi=300):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+    def plot_uam_share_by_od(self, ax=None, dpi=300):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",
             y="percentage_uam",
             hue="markets",
+            hue_order=self.network.vertiports[1:],
             err_style=None,
             legend=True,
             marker="o",

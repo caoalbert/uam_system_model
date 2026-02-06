@@ -25,7 +25,7 @@ def plot_travel_time(
     travel_time_avg, vertiports, ylim=(0, 100), ylabel="TNC Trip Time (min)"
 ):
     fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=300)
-    for i in range(1, 9):
+    for i in range(1, len(vertiports)):
         ax[0].plot(
             np.arange(24),
             travel_time_avg[0, i, :],

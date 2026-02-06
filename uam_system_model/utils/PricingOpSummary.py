@@ -56,11 +56,16 @@ class PricingOpSummary(PricingOptimizer):
 
         return summary_stats
 
-    def plot_average_rasm(self, dpi=300):
+    def plot_average_rasm(self, ax=None, dpi=300):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
+            
         df_grouped = self.policy.groupby(["passenger_arrival_time_slot"])[
             "rev_per_mile"
         ].mean()
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+
         sns.lineplot(
             x=np.arange(len(df_grouped)),
             y=df_grouped.values,
@@ -164,8 +169,11 @@ class PricingOpSummary(PricingOptimizer):
 
         return fig, ax
 
-    def plot_uam_share_by_od(self, dpi=300):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+    def plot_uam_share_by_od(self, ax=None, dpi=300):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",

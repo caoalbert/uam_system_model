@@ -84,6 +84,7 @@ class PricingOptimizer:
                     destination=row["destination_vertiport_id"],
                     flight_time_matrix=self.flight_time_matrix,
                     num_pax=row["counts"],
+                    uam_distance_matrix=uam_distance_matrix,
                 )
             )
 
@@ -152,9 +153,11 @@ class PricingOptimizer:
 
         t_i_uam = np.array(t_i_uam)
 
-        non_zero_indices = [i for i, value in enumerate(self.di_bar) if value != 0]
+        non_zero_indices = [i for i, value in enumerate(self.di_bar) if value > 0]
+        negative_indices = [i for i, value in enumerate(self.di_bar) if value < 0]
 
         di_bar_selected_x = [self.di_bar[i] for i in non_zero_indices]
+        di_bar_selected_negative = [self.di_bar[i] for i in negative_indices]
 
         if utility_type == "vot":
             if isinstance(value_of_time, float):
@@ -261,7 +264,13 @@ class PricingOptimizer:
         operating_cost = quicksum(
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
-        )
+        ) +  quicksum(
+            m._x_vars[self.edges[i]] * CASM * 4 * di_bar_selected_negative[i_zero]
+            for i_zero, i in zip(range(len(di_bar_selected_negative)), negative_indices)
+        ) # the second part is repositioning flight cost
+
+
+
         if utility_type == "vot":
             cost_level_of_service = quicksum(
                 di_bar_selected_x[i_non_zero]
@@ -497,6 +506,7 @@ class FlightTask:
         origin,
         destination,
         flight_time_matrix,
+        uam_distance_matrix,
         num_pax,
     ):
         self.name = name
@@ -504,6 +514,7 @@ class FlightTask:
         self.duration = duration
         self.land_time = self.start_time + self.duration
         self.flight_time_matrix = flight_time_matrix
+        self.uam_distance_matrix = uam_distance_matrix
         self.origin = origin
         self.destination = destination
         self.num_pax = num_pax
@@ -592,6 +603,9 @@ class AssignmentNetwork:
                         )
                     )
 
-                    di_bar.append(0)
+                    repo_distance = self.list_of_tasks[i].uam_distance_matrix[
+                        self.list_of_tasks[i].destination, self.list_of_tasks[j].origin
+                    ]
+                    di_bar.append(-1 * repo_distance) 
 
         return reassignment_edges, di_bar

@@ -56,9 +56,9 @@ class PricingOpSummary(PricingOptimizer):
 
         return summary_stats
 
-    def plot_average_rasm(self, ax=None, dpi=300):
+    def plot_average_rasm(self, ax=None, ylim=(0, 12), dpi=300):
         if ax is None:
-            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+            fig, ax = plt.subplots(figsize=(4, 2.5), dpi=dpi)
         else:
             fig = ax.figure
             
@@ -79,15 +79,19 @@ class PricingOpSummary(PricingOptimizer):
             xlabel="",
             ylabel="RASM ($)",
             xlim=(0, 48),
-            title="Average RASM over ODs",
+            ylim=ylim,
+            title="Average RASM over Passengers",
         )
         ax.xaxis.set_major_locator(MultipleLocator(2))
         ax.grid(True, linestyle="--", alpha=0.5)
 
         return fig, ax
 
-    def plot_rasm_by_od(self, dpi=300):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+    def plot_rasm_by_od(self, ax=None, dpi=300, ylim=(0, 12)):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure 
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",
@@ -106,6 +110,7 @@ class PricingOpSummary(PricingOptimizer):
             ylabel="RASM ($)",
             xlim=(0, 48),
             title="Average RASM by ODs",
+            ylim=ylim,
         )
         ax.xaxis.set_major_locator(MultipleLocator(2))
         ax.grid(True, linestyle="--", alpha=0.5)
@@ -113,8 +118,11 @@ class PricingOpSummary(PricingOptimizer):
 
         return fig, ax
 
-    def plot_fare_by_od(self, dpi=300):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+    def plot_fare_by_od(self, ax=None, dpi=300):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",
@@ -141,8 +149,11 @@ class PricingOpSummary(PricingOptimizer):
 
         return fig, ax
 
-    def plot_revenue_by_od(self, dpi=300):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+    def plot_revenue_by_od(self, ax=None, dpi=300, ylim=(0, 2000)):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        else:
+            fig = ax.figure
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",
@@ -161,11 +172,12 @@ class PricingOpSummary(PricingOptimizer):
             xlabel="",
             ylabel="Revenue ($)",
             xlim=(0, 48),
+            ylim=ylim,
             title="Total Revenue by ODs",
         )
         ax.xaxis.set_major_locator(MultipleLocator(2))
         ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(bbox_to_anchor=(1.02, 0.85), loc="upper left", borderaxespad=0.0)
+        ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
 
         return fig, ax
 
@@ -196,6 +208,6 @@ class PricingOpSummary(PricingOptimizer):
         )
         ax.xaxis.set_major_locator(MultipleLocator(2))
         ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(bbox_to_anchor=(1.02, 0.85), loc="upper left", borderaxespad=0.0)
+        ax.legend(bbox_to_anchor=(1.02, 0.95), loc="upper left", borderaxespad=0.0)
 
         return fig, ax

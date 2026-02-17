@@ -90,7 +90,13 @@ class CostAnalyzer:
             round(self.revenue - self.total_opex, 2),
         )
 
-    def projection(self, years=15, discount_rate=0.08):
+    def projection(self, years=15, discount_rate=0.08, ax=None):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
+        else:
+            fig = ax.figure
+
+
         rev_by_year = np.full(years, self.revenue)
         opex_by_year = np.full(years, self.total_opex)
         net_cash_flow = np.concatenate(
@@ -113,6 +119,8 @@ class CostAnalyzer:
             discounted_cash_flows,
             np.cumsum(net_cash_flow),
             cum_disc,
+            fig,
+            ax,
         )
 
         print(f"ROI (undiscounted) ............ : {ROI:.2f}")
@@ -134,6 +142,8 @@ class CostAnalyzer:
         discounted_cashflow,
         cumulative_cash_flow,
         cumulative_discounted_cashflow,
+        fig,
+        ax,
     ):
         df = pd.DataFrame(
             {
@@ -144,8 +154,6 @@ class CostAnalyzer:
                 "Cumulative Discounted CF": cumulative_discounted_cashflow,
             }
         )
-
-        fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
 
         ax.bar(
             df["Year"],
@@ -277,8 +285,8 @@ class CostAnalyzer:
         revenue = df["total_revenue"].sum()
         return revenue * self.multiplier
 
-    def plot(self):
-        fig, ax = plt.subplots(ncols=2, figsize=(14, 4), dpi=300)
+    def plot(self, dpi=300):
+        fig, ax = plt.subplots(ncols=2, figsize=(14, 4), dpi=dpi)
         sns.barplot(
             x=["Fleet Aquisition Cost", "Construction Cost", "Land Acquisition Cost"],
             y=[
@@ -314,10 +322,11 @@ class CostAnalyzer:
             palette=custom_colors,
         )
         ax[1].set_title("Yearly OPEX", fontsize=24)
-        ax[1].set(yticks=np.arange(0, 11, 1))
+        ax[1].set(yticks=np.arange(0, 18, 2))
 
         for i in range(2):
             ax[i].set_ylabel("Million ($)")
             ax[i].tick_params(axis="x", rotation=45)
+            ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
 
         return fig, ax

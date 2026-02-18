@@ -275,12 +275,11 @@ class PricingOptimizer:
             cost_level_of_service = quicksum(
                 di_bar_selected_x[i_non_zero]
                 / p_i_bar[i_non_zero]
-                * m._x_inverse_vars[self.edges[i]]
+                * m._x_inverse_vars[self.edges[idx]]
+                * m._theta_uam[i_non_zero]
                 * self.time_resolution
                 / 2
-                for i_non_zero, i in zip(
-                    range(len(di_bar_selected_x)), non_zero_indices
-                )
+                for i_non_zero, idx in enumerate(non_zero_indices)
             )
             theta_terms = quicksum(
                 di_bar_selected_x[i_non_zero]

@@ -22,9 +22,13 @@ matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
 
 def plot_travel_time(
-    travel_time_avg, vertiports, ylim=(0, 100), ylabel="TNC Trip Time (min)"
+    travel_time_avg, vertiports, ax=None, dpi=300, ylim=(0, 100), ylabel="TNC Trip Time (min)"
 ):
-    fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=300)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=dpi)
+    else:
+        fig = ax.figure
+        
     for i in range(1, len(vertiports)):
         ax[0].plot(
             np.arange(24),

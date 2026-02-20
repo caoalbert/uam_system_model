@@ -261,6 +261,58 @@ class PricingOptimizer:
                 name=f"inv_pwl_{i}",
             )
 
+        # Constraint: add FATO capacity constraint
+        # --- FATO CAPACITY CONSTRAINT ---
+        fato_capacity = 10  # Define your capacity per time interval
+        vertiport_usage = {}  # Dictionary to store (vertiport, time) -> [list of Gurobi variables]
+
+        # 1. Track usage from Commercial Flights (Task Edges)
+        for i, task in enumerate(all_tasks):
+            # Takeoff at Origin at Start Time
+            key_out = (task.origin, task.start_time)
+            # Landing at Destination at Land Time
+            key_in = (task.destination, task.land_time)
+
+            # Get the specific edge variable for this task
+            task_edge = ((task.name, "start"), (task.name, "finish"))
+            var = m._x_vars[task_edge]
+
+            vertiport_usage.setdefault(key_out, []).append(var)
+            vertiport_usage.setdefault(key_in, []).append(var)
+
+        # 2. Track usage from Repositioning Flights (Reassignment Edges)
+        # Reassignment edges are from (task_i, "finish") to (task_j, "start")
+        for i in range(len(all_tasks)):
+            for j in range(i + 1, len(all_tasks)):
+                task_i = all_tasks[i]
+                task_j = all_tasks[j]
+
+                # Check if the network logic created an edge between these tasks
+                edge = ((task_i.name, "finish"), (task_j.name, "start"))
+                if edge in m._x_vars:
+                    # If the aircraft has to fly to a different vertiport to start the next task
+                    if task_i.destination != task_j.origin:
+                        repo_var = m._x_vars[edge]
+
+                        # Takeoff from previous destination
+                        # Note: In your script, repo starts immediately after task_i lands
+                        key_repo_out = (task_i.destination, task_i.land_time)
+
+                        # Landing at next origin
+                        # Note: Arrival time depends on flight time matrix
+                        repo_time = self.flight_time_matrix[task_i.destination, task_j.origin]
+                        key_repo_in = (task_j.origin, task_i.land_time + repo_time)
+
+                        vertiport_usage.setdefault(key_repo_out, []).append(repo_var)
+                        vertiport_usage.setdefault(key_repo_in, []).append(repo_var)
+
+        # 3. Add the Constraints to the Gurobi Model
+        for (v_id, t_slot), vars_list in vertiport_usage.items():
+            m.addConstr(
+                quicksum(vars_list) <= fato_capacity,
+                name=f"FATO_Cap_V{v_id}_T{t_slot}"
+            )
+
         operating_cost = quicksum(
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)

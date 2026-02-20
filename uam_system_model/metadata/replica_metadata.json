@@ -1,0 +1,27 @@
+{
+  "mapping": {
+    "activity_id": "trip_id",
+    "origin_trct_2020": "origin_tract",
+    "origin_bgrp_2020": "origin_block_group",
+    "origin_cty_2020": "origin_county",
+    "destination_trct_2020": "destination_tract",
+    "destination_bgrp_2020": "destination_block_group",
+    "destination_cty_2020": "destination_county",
+    "primary_mode": "mode",
+    "trip_start_time": "start_time",
+    "trip_end_time": "end_time",
+    "trip_duration_minutes": "duration_min",
+    "trip_distance_miles": "distance_mi",
+    "trip_taker_person_id": "user_id",
+    "trip_taker_age": "user_age",
+    "trip_taker_employment_status": "user_employment",
+    "trip_taker_individual_income": "user_income",
+    "trip_taker_home_trct_2020": "user_home_tract",
+    "trip_taker_work_trct_2020": "user_work_tract"
+  },
+  "metadata_groups": {
+    "spatial": ["origin_tract", "destination_tract", "origin_county"],
+    "temporal": ["start_time", "end_time", "duration_min"],
+    "demographic": ["user_age", "user_income", "user_employment"]
+  }
+}

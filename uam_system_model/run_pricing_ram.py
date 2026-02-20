@@ -6,6 +6,7 @@ import pickle
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
 sys.path.append(parent_dir)
 from geopy.distance import geodesic
+from metadata.uam_schema import UAMSchema
 
 from uam_system_model.StarNetworkJFK import StarNetwork
 
@@ -20,6 +21,8 @@ import time
 
 # pkill -f "run_pricing_ram.py"
 # nohup python run_pricing_ram.py > run_pricing.out &
+
+SCHEMA = UAMSchema()
 
 def ensure_directory_exists(path):
     """Ensure the directory exists; if not, create it."""
@@ -40,14 +43,26 @@ if __name__ == "__main__":
     ensure_directory_exists(args.output_folder_path)
 
 
-    vertiports = ["UIU", "CHI"]
+    vertiports = ["UIU", "CHI", "ORD", "MDW"]
 
-    flight_distance_matrix = np.array([[0, 129],
-                                    [129, 0]])  # in miles
-    flight_time_matrix = np.array([[0, 70],
-                                [70, 0]])  # in minutes
-    energy_consumption_matrix = np.array([[0, 0.5],
-                                        [0.5, 0]])  # in kWh
+    flight_distance_matrix = np.array([
+        [0, 129, 150, 100],
+        [129, 0, 30, 40],
+        [150, 30, 0, 50],
+        [100, 40, 50, 0]
+    ])  # in miles
+    flight_time_matrix = np.array([
+        [0, 70, 80, 55],
+        [70, 0, 15, 20],
+        [80, 15, 0, 25],
+        [55, 20, 25, 0]
+    ])  # in minutes
+    energy_consumption_matrix = np.array([
+        [0, 0.5, 0.5, 0.5],
+        [0.5, 0, 0.5, 0.5],
+        [0.5, 0.5, 0, 0.5],
+        [0.5, 0.5, 0.5, 0]
+    ])  # in kWh
 
     network = StarNetwork(
         vertiport_names=vertiports,
@@ -56,15 +71,21 @@ if __name__ == "__main__":
         energy_consumption_matrix=energy_consumption_matrix,
     )
 
-    df = pd.read_csv("data/c_uiuc.csv")
-    df['hour'] = pd.to_datetime(df['trip_start_time']).dt.hour
-    c_uiuc = df.groupby('hour').size().reset_index(name='total_trips')
-    c_uiuc['od'] = 'UIU_CHI'
-    df = pd.read_csv("data/uiuc_c.csv")
-    df['hour'] = pd.to_datetime(df['trip_start_time']).dt.hour
-    uiuc_c = df.groupby('hour').size().reset_index(name='total_trips')
-    uiuc_c['od'] = 'CHI_UIU'
-    df = pd.concat([c_uiuc, uiuc_c], ignore_index=True)
+    def make_od(csv_path, origin, destination):
+        df = pd.read_csv(csv_path)
+        df['hour'] = pd.to_datetime(df[SCHEMA.START_TIME]).dt.hour
+        od_df = df.groupby('hour').size().reset_index(name='total_trips')
+        od_df['od'] = f"{origin}_{destination}"
+        return od_df
+    
+    df_uiu_chi = make_od("data/uiuc_c.csv", "UIU", "CHI")
+    df_chi_uiu = make_od("data/c_uiuc.csv", "CHI", "UIU")
+    df_uiu_ord = make_od("data/uiuc_ord.csv", "UIU", "ORD")
+    df_ord_uiu = make_od("data/ord_uiuc.csv", "ORD", "UIU")
+    df_uiu_mdw = make_od("data/uiuc_mdw.csv", "UIU", "MDW")
+    df_mdw_uiu = make_od("data/mdw_uiuc.csv", "MDW", "UIU")
+
+    df = pd.concat([df_uiu_chi, df_chi_uiu, df_uiu_ord, df_ord_uiu, df_uiu_mdw, df_mdw_uiu], ignore_index=True)
 
     df['total_trips'] *= 365
 
@@ -77,45 +98,39 @@ if __name__ == "__main__":
     first_mile = np.zeros(shape=(len(vertiports), 24)) 
     last_mile = np.zeros(shape=(len(vertiports), 24))
 
-    df = pd.read_csv("data/uiuc_c.csv")
-    df['hour'] = pd.to_datetime(df['trip_start_time']).dt.hour
-    c_uiuc = df.groupby('hour').size().reset_index(name='total_trips')
+    def fill_od(csv_path, o, d):
+        tmp = pd.read_csv(csv_path)
+        tmp['hour'] = pd.to_datetime(tmp[SCHEMA.START_TIME]).dt.hour
+        od_df = tmp.groupby('hour').agg({"hour": "size", "Driving_IVTT_min": "mean", "FM_duration_min": "mean", "LM_duration_min": "mean", "Driving_Fare_USD": "mean", "FM_fare_USD": "mean", "LM_fare_USD": "mean"})
+        od_df = od_df.rename(columns={"hour": "total_trips"})
+        od_df = od_df.reset_index()
+        for _, row in od_df.iterrows():
+            h = int(row['hour'])
+            uber_travel_time[o,d,h] = row["Driving_IVTT_min"]
+            first_mile[o,h] = row["FM_duration_min"]
+            last_mile[d,h] = row["LM_duration_min"]
+            uber_fare[o,d,h] = row["Driving_Fare_USD"]
 
-    df_grouped = df.groupby("hour").agg({"hour": "size", "Driving_IVTT_min": "mean", "FM_duration_min": "mean", "LM_duration_min": "mean", "Driving_Fare_USD": "mean", "FM_fare_USD": "mean", "LM_fare_USD": "mean"})
-    df_grouped = df_grouped.rename(columns={"hour": "total_trips"})
-    df_grouped = df_grouped.reset_index()
+    fill_od("data/uiuc_c.csv", 0, 1)
+    fill_od("data/c_uiuc.csv", 1, 0)
+    fill_od("data/uiuc_ord.csv", 0, 2)
+    fill_od("data/ord_uiuc.csv", 2, 0)
+    fill_od("data/uiuc_mdw.csv", 0, 3)
+    fill_od("data/mdw_uiuc.csv", 3, 0)
 
-
-    for _, row in df_grouped.iterrows():
-        hour = int(row['hour'])
-        uber_travel_time[0, 1, hour] = row['Driving_IVTT_min']
-        first_mile[0, hour] = row['FM_duration_min']
-        last_mile[1, hour] = row['LM_duration_min']
-        uber_fare[0, 1, hour] = row['Driving_Fare_USD']
-
-    df = pd.read_csv("data/c_uiuc.csv")
-    df['hour'] = pd.to_datetime(df['trip_start_time']).dt.hour
-    c_uiuc = df.groupby('hour').size().reset_index(name='total_trips')
-
-    df_grouped = df.groupby("hour").agg({"hour": "size", "Driving_IVTT_min": "mean", "FM_duration_min": "mean", "LM_duration_min": "mean", "Driving_Fare_USD": "mean", "FM_fare_USD": "mean", "LM_fare_USD": "mean"})
-    df_grouped = df_grouped.rename(columns={"hour": "total_trips"})
-    df_grouped = df_grouped.reset_index()
-
-    for _, row in df_grouped.iterrows():
-        hour = int(row['hour'])
-        uber_travel_time[1, 0, hour] = row['Driving_IVTT_min']
-        first_mile[1, hour] = row['FM_duration_min']
-        last_mile[0, hour] = row['LM_duration_min']
-        uber_fare[1, 0, hour] = row['Driving_Fare_USD']
-
-    first_or_last_distance = np.array([[0, 4], [8, 0]])  # in miles
+    first_or_last_distance = np.array([
+        [0, 4, 4, 4],
+        [4, 0, 4, 4],
+        [4, 4, 0, 4],
+        [4, 4, 4, 0],
+    ])  # in miles
     first_or_last_distance = np.repeat(first_or_last_distance[:, :, np.newaxis], 24, axis=2)
 
 
     op = PricingOptimizer(StarNetwork=network)
 
     fs = np.arange(10, 65, 5)
-    casm = np.arange(0.6, 0.9, 0.1)
+    casm = np.arange(0.6, 1.6, 0.1)
 
     for f in fs:
         for c in casm:
@@ -133,7 +148,7 @@ if __name__ == "__main__":
             optimality_gap=0.05,
             value_of_time=32.63,
             time_limit=3600,
-            utility_type="vot",
+            utility_type="betas",
             CASM=c,
             verbose=False
         )

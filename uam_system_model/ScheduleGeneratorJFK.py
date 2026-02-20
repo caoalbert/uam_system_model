@@ -31,10 +31,16 @@ class ScheduleGenerator:
 
         for od in list_of_ods:
             od_data = arrival_rate_by_vertiport[arrival_rate_by_vertiport["od"] == od]
+
+            # FF1 fix made to accommodate demand files with sparse data without demand in each hour
+            od_data = od_data.set_index("hour")
+            full_day_demand = od_data["total_trips"].reindex(range(24), fill_value=0)
+
             realized_demand = auto_regressive_poisson(
-                rate=od_data["total_trips"].values / 365,
+                rate=full_day_demand.values / 365,
                 alpha=auto_regressive_alpha,
             )
+
             arrival_time = []
             for hour in range(24):
                 for _ in range(realized_demand[hour]):

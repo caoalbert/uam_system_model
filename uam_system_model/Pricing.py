@@ -264,12 +264,10 @@ class PricingOptimizer:
         operating_cost = quicksum(
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
-        ) +  quicksum(
+        ) + quicksum(
             m._x_vars[self.edges[i]] * CASM * 4 * di_bar_selected_negative[i_zero]
             for i_zero, i in zip(range(len(di_bar_selected_negative)), negative_indices)
-        ) # the second part is repositioning flight cost
-
-
+        )  # the second part is repositioning flight cost
 
         if utility_type == "vot":
             cost_level_of_service = quicksum(
@@ -605,6 +603,6 @@ class AssignmentNetwork:
                     repo_distance = self.list_of_tasks[i].uam_distance_matrix[
                         self.list_of_tasks[i].destination, self.list_of_tasks[j].origin
                     ]
-                    di_bar.append(-1 * repo_distance) 
+                    di_bar.append(-1 * repo_distance)
 
         return reassignment_edges, di_bar

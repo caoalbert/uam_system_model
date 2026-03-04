@@ -437,7 +437,9 @@ class PricingOptimizer:
         df["rev_per_mile"] = df["fare"] / df["distance"]
         df["total_revenue"] = df["fare"] * df["uam_pax"]
 
-        return df
+        repositioning_flights = results
+
+        return df, repositioning_flights
 
     @staticmethod
     def calc_fare_vot(

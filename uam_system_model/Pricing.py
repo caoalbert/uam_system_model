@@ -22,18 +22,19 @@ class PricingOptimizer:
         uber_fare,
         first_mile_time,
         last_mile_time,
-        first_or_last_distance,
+        first_or_last_cost,
         uam_flight_time,
         uam_distance_matrix,
         optimality_gap,
         value_of_time,
         utility_type,
+        seat_size,
         beta_time=-0.0192,
         beta_cost=-0.0353,
         uam_transition_time=10,
         time_limit=1800,
         CASM=0.79,
-        verbose=True,
+        verbose=True
     ):
         if isinstance(value_of_time, int) or isinstance(value_of_time, float):
             value_of_time = [
@@ -129,7 +130,7 @@ class PricingOptimizer:
                 )
 
             first_last_mile_cost.append(
-                first_or_last_distance[origin, destination, time] * 2.5
+                first_or_last_cost[origin, destination, time]
             )
 
             uber_travel_time_i.append(uber_travel_time[origin, destination, time])
@@ -146,7 +147,7 @@ class PricingOptimizer:
             beta_cost_i.append(self.beta_cost[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
-            flight_cost_uam.append(CASM * 4 * distance)
+            flight_cost_uam.append(CASM * seat_size * distance)
 
         uber_travel_time_i = np.array(uber_travel_time_i)
         uber_fare_i = np.array(uber_fare_i)
@@ -249,7 +250,7 @@ class PricingOptimizer:
         for i in range(len(non_zero_indices)):
             idx = non_zero_indices[i]
             m.addConstr(
-                m._x_vars[self.edges[idx]] * 4
+                m._x_vars[self.edges[idx]] * seat_size
                 >= m._theta_uam[i] * di_bar_selected_x[i],
                 f"cap_{i}",
             )
@@ -317,7 +318,7 @@ class PricingOptimizer:
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
         ) +  quicksum(
-            m._x_vars[self.edges[i]] * CASM * 4 * di_bar_selected_negative[i_zero]
+            m._x_vars[self.edges[i]] * CASM * seat_size * di_bar_selected_negative[i_zero]
             for i_zero, i in zip(range(len(di_bar_selected_negative)), negative_indices)
         ) # the second part is repositioning flight cost
 

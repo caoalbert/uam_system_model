@@ -39,6 +39,9 @@ class PricingOptimizer:
             value_of_time = [
                 value_of_time for _ in range(len(self.network.vertiport_dict))
             ]
+        elif len(value_of_time) != len(self.network.vertiport_dict):
+            raise ValueError("Length of value_of_time must match number of vertiports")
+
 
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
@@ -184,7 +187,7 @@ class PricingOptimizer:
         eps = 0.05
 
         m = Model("Pricing Problem")
-        m.Params.NonConvex = 2
+        m.Params.NonConvex = -1
         m.setParam("MIPGap", optimality_gap)
         m.setParam("TimeLimit", time_limit)
 
@@ -437,9 +440,20 @@ class PricingOptimizer:
         df["rev_per_mile"] = df["fare"] / df["distance"]
         df["total_revenue"] = df["fare"] * df["uam_pax"]
 
-        repositioning_flights = results
+        pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*\]"
+        repo_flights = results[results['Variable'].str.contains(pattern, regex=True)]
+        repo_flights = repo_flights.reset_index(drop=True)
 
-        return df, repositioning_flights
+        pattern = r"\('Task_(\d+)', 'finish'\),\('Task_(\d+)', 'start'\)"
+        repo_flights[['finish_task', 'start_task']] = repo_flights['Variable'].str.extract(pattern).reset_index(drop=True).astype(int)
+        repo_flights['origin_vertiport_id'] = repo_flights['finish_task'].apply(lambda x: self.pax_arr_grouped.loc[x, 'destination_vertiport_id'])
+        repo_flights['destination_vertiport_id'] = repo_flights['start_task'].apply(lambda x: self.pax_arr_grouped.loc[x, 'origin_vertiport_id'])
+        repo_flights['repo_flight_time'] = repo_flights.apply(lambda row: self.flight_time_matrix[row['origin_vertiport_id'], row['destination_vertiport_id']], axis=1)
+        repo_flights['time_slot'] = repo_flights['start_task'].apply(lambda x: self.pax_arr_grouped.loc[x, 'passenger_arrival_time_slot'])
+        repo_flights['repositioning_distance'] = repo_flights.apply(lambda row: uam_distance_matrix[row['origin_vertiport_id'], row['destination_vertiport_id']], axis=1)
+        repo_flights['cost'] = repo_flights['repositioning_distance'] * CASM * 4
+
+        return df, repo_flights
 
     @staticmethod
     def calc_fare_vot(

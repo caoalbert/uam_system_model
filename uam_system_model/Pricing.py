@@ -349,21 +349,21 @@ class PricingOptimizer:
                     * beta_time_i[i_non_zero]
                     * self.time_resolution
                 ) / (2 * beta_cost_i[i_non_zero])
-                b_vars = m.addVars(max_flights + 1, vtype=GRB.BINARY, name=f"b_{idx}")
+                b_vars = m.addVars(int(max_flights + 1), vtype=GRB.BINARY, name=f"b_{idx}")
 
                 w_vars = m.addVars(
-                    max_flights + 1, vtype=GRB.CONTINUOUS, lb=0, ub=1, name=f"w_{idx}"
+                    int(max_flights + 1), vtype=GRB.CONTINUOUS, lb=0, ub=1, name=f"w_{idx}"
                 )
                 m.addConstr(
-                    x_var == quicksum(k * b_vars[k] for k in range(max_flights + 1)),
+                    x_var == quicksum(k * b_vars[k] for k in range(int(max_flights + 1))),
                     f"link_x_b_{idx}",
                 )
                 m.addConstr(
-                    quicksum(b_vars[k] for k in range(max_flights + 1)) == 1,
+                    quicksum(b_vars[k] for k in range(int(max_flights + 1))) == 1,
                     f"one_b_{idx}",
                 )
 
-                for k in range(max_flights + 1):
+                for k in range(int(max_flights + 1)):
                     m.addConstr(w_vars[k] <= b_vars[k], f"mc1_{idx}_{k}")
                     m.addConstr(w_vars[k] <= theta_var, f"mc2_{idx}_{k}")
                     m.addConstr(

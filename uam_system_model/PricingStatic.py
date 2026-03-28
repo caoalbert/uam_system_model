@@ -39,7 +39,9 @@ class PricingOptimizerStatic:
         elif len(value_of_time) != len(self.network.vertiport_dict):
             raise ValueError("Length of value_of_time must match number of vertiports")
         if uam_fare.shape != first_or_last_distance.shape:
-            raise ValueError("Shapes of uam_fare, first_or_last_distance, and uam_flight_time must match")
+            raise ValueError(
+                "Shapes of uam_fare, first_or_last_distance, and uam_flight_time must match"
+            )
 
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
@@ -72,73 +74,145 @@ class PricingOptimizerStatic:
         self.flight_time_matrix = np.ceil(
             self.network.flight_time * 5 / self.time_resolution
         )
-        uam_operating_cost = np.repeat(self.network.flight_distance_matrix[:,:,np.newaxis], 24, axis=2) * CASM * 4
+        uam_operating_cost = (
+            np.repeat(self.network.flight_distance_matrix[:, :, np.newaxis], 24, axis=2)
+            * CASM
+            * 4
+        )
 
-        uam_cost = np.zeros(shape=(len(self.network.vertiport_dict), len(self.network.vertiport_dict), 24))
+        uam_cost = np.zeros(
+            shape=(
+                len(self.network.vertiport_dict),
+                len(self.network.vertiport_dict),
+                24,
+            )
+        )
         for o in range(len(self.network.vertiport_dict)):
             for d in range(len(self.network.vertiport_dict)):
                 for h in range(24):
-                    uam_cost[o, d, h] = uam_fare[o, d, h] + first_or_last_distance[o, d, h] * 2.5
-    
-                    
-        uam_travel_time = np.zeros(shape=(len(self.network.vertiport_dict), len(self.network.vertiport_dict), 24))
+                    uam_cost[o, d, h] = (
+                        uam_fare[o, d, h] + first_or_last_distance[o, d, h] * 2.5
+                    )
+
+        uam_travel_time = np.zeros(
+            shape=(
+                len(self.network.vertiport_dict),
+                len(self.network.vertiport_dict),
+                24,
+            )
+        )
         for o in range(len(self.network.vertiport_dict)):
             for d in range(len(self.network.vertiport_dict)):
                 for h in range(24):
-                    uam_travel_time[o, d, h] = uam_flight_time[o, d] + first_mile_time[o, h] + last_mile_time[d, h] + uam_transition_time
+                    uam_travel_time[o, d, h] = (
+                        uam_flight_time[o, d]
+                        + first_mile_time[o, h]
+                        + last_mile_time[d, h]
+                        + uam_transition_time
+                    )
 
-        utility_uam = np.zeros(shape=(len(self.network.vertiport_dict), len(self.network.vertiport_dict), 24))
+        utility_uam = np.zeros(
+            shape=(
+                len(self.network.vertiport_dict),
+                len(self.network.vertiport_dict),
+                24,
+            )
+        )
         for o in range(len(self.network.vertiport_dict)):
             for d in range(len(self.network.vertiport_dict)):
                 for h in range(24):
                     if o != 0:
-                        utility_uam[o, d, h] = self.beta_time[o] * uam_travel_time[o, d, h] + self.beta_cost[o] * uam_cost[o, d, h]
+                        utility_uam[o, d, h] = (
+                            self.beta_time[o] * uam_travel_time[o, d, h]
+                            + self.beta_cost[o] * uam_cost[o, d, h]
+                        )
                     else:
-                        utility_uam[o, d, h] = self.beta_time[d] * uam_travel_time[o, d, h] + self.beta_cost[d] * uam_cost[o, d,h]
-        utility_uber = np.zeros(shape=(len(self.network.vertiport_dict), len(self.network.vertiport_dict), 24))
+                        utility_uam[o, d, h] = (
+                            self.beta_time[d] * uam_travel_time[o, d, h]
+                            + self.beta_cost[d] * uam_cost[o, d, h]
+                        )
+        utility_uber = np.zeros(
+            shape=(
+                len(self.network.vertiport_dict),
+                len(self.network.vertiport_dict),
+                24,
+            )
+        )
         for o in range(len(self.network.vertiport_dict)):
             for d in range(len(self.network.vertiport_dict)):
                 for h in range(24):
-                    utility_uber[o, d, h] = self.beta_time[o] * uber_travel_time[o, d, h] + self.beta_cost[o] * uber_fare[o, d, h]
-        market_share_uam = np.zeros(shape=(len(self.network.vertiport_dict), len(self.network.vertiport_dict), 24))
+                    utility_uber[o, d, h] = (
+                        self.beta_time[o] * uber_travel_time[o, d, h]
+                        + self.beta_cost[o] * uber_fare[o, d, h]
+                    )
+        market_share_uam = np.zeros(
+            shape=(
+                len(self.network.vertiport_dict),
+                len(self.network.vertiport_dict),
+                24,
+            )
+        )
         for o in range(len(self.network.vertiport_dict)):
             for d in range(len(self.network.vertiport_dict)):
                 for h in range(24):
                     exp_uam = np.exp(utility_uam[o, d, h])
                     exp_uber = np.exp(utility_uber[o, d, h])
-                    market_share_uam[o, d, h] = exp_uam / (exp_uam + exp_uber) if (exp_uam + exp_uber) > 0 else 0.0
+                    market_share_uam[o, d, h] = (
+                        exp_uam / (exp_uam + exp_uber)
+                        if (exp_uam + exp_uber) > 0
+                        else 0.0
+                    )
 
-
-        self.pax_arr_grouped['market_share_uam'] = self.pax_arr_grouped.apply(lambda row: market_share_uam[int(row['origin_vertiport_id']), int(row['destination_vertiport_id']), int(row['passenger_arrival_time_slot']//2)], axis=1)
-        self.pax_arr_grouped['uam_pax'] = self.pax_arr_grouped['counts'] * self.pax_arr_grouped['market_share_uam']
-        self.pax_arr_grouped['uam_pax'] = self.pax_arr_grouped['uam_pax'].round().astype(int)
+        self.pax_arr_grouped["market_share_uam"] = self.pax_arr_grouped.apply(
+            lambda row: market_share_uam[
+                int(row["origin_vertiport_id"]),
+                int(row["destination_vertiport_id"]),
+                int(row["passenger_arrival_time_slot"] // 2),
+            ],
+            axis=1,
+        )
+        self.pax_arr_grouped["uam_pax"] = (
+            self.pax_arr_grouped["counts"] * self.pax_arr_grouped["market_share_uam"]
+        )
+        self.pax_arr_grouped["uam_pax"] = (
+            self.pax_arr_grouped["uam_pax"].round().astype(int)
+        )
 
         all_tasks = []
         for idx, row in self.pax_arr_grouped.iterrows():
-            o = int(row['origin_vertiport_id'])
-            d = int(row['destination_vertiport_id'])
-            h = int(row['passenger_arrival_time_slot']//2)
-            slot = int(row['passenger_arrival_time_slot'])
-            count = row['uam_pax'] 
+            o = int(row["origin_vertiport_id"])
+            d = int(row["destination_vertiport_id"])
+            h = int(row["passenger_arrival_time_slot"] // 2)
+            slot = int(row["passenger_arrival_time_slot"])
+            count = row["uam_pax"]
             flight_id = 0
             while count > 0:
-                num_pax = min(count, 4)  # Assuming each flight can take up to 4 passengers
-                all_tasks.append(FlightTask(
-                    name=f"task_{o}_{d}_{slot}_{flight_id}_{int(num_pax)}",
-                    start_time =  row['passenger_arrival_time_slot'],
-                    uam_distance_matrix=self.network.flight_distance_matrix, 
-                    duration=self.flight_time_matrix[int(row['origin_vertiport_id']), int(row['destination_vertiport_id'])],
-                    origin=int(row['origin_vertiport_id']),
-                    destination=int(row['destination_vertiport_id']),
-                    flight_time_matrix=self.flight_time_matrix,
-                    num_pax=num_pax,
-                    profit=uam_fare[o, d, h] * num_pax - uam_operating_cost[o, d, h]
-                ))
+                num_pax = min(
+                    count, 4
+                )  # Assuming each flight can take up to 4 passengers
+                all_tasks.append(
+                    FlightTask(
+                        name=f"task_{o}_{d}_{slot}_{flight_id}_{int(num_pax)}",
+                        start_time=row["passenger_arrival_time_slot"],
+                        uam_distance_matrix=self.network.flight_distance_matrix,
+                        duration=self.flight_time_matrix[
+                            int(row["origin_vertiport_id"]),
+                            int(row["destination_vertiport_id"]),
+                        ],
+                        origin=int(row["origin_vertiport_id"]),
+                        destination=int(row["destination_vertiport_id"]),
+                        flight_time_matrix=self.flight_time_matrix,
+                        num_pax=num_pax,
+                        profit=uam_fare[o, d, h] * num_pax
+                        - uam_operating_cost[o, d, h],
+                    )
+                )
                 count -= num_pax
                 flight_id += 1
 
-
-        assignment_network = AssignmentNetwork(all_tasks, num_vehicles=num_vehicles, CASM=CASM)
+        assignment_network = AssignmentNetwork(
+            all_tasks, num_vehicles=num_vehicles, CASM=CASM
+        )
         (
             self.nodes,
             self.supply,
@@ -175,51 +249,89 @@ class PricingOptimizerStatic:
         decisions = []
         value = []
         for var in m.getVars():
-
             decisions.append(var.varName)
             value.append(var.x)
 
         results = pd.DataFrame({"Variable": decisions, "value": value})
         pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*\]"
-        flights = results[results['Variable'].str.contains(pattern, regex=True)].reset_index(drop=True)
+        flights = results[
+            results["Variable"].str.contains(pattern, regex=True)
+        ].reset_index(drop=True)
         flights = flights.reset_index()
         flights = flights.rename(columns={"index": "task"})
 
-        flights['extracted_nums'] = flights['Variable'].apply(self.extract_specific_numbers)
-        flights['num_pax'] = flights['extracted_nums'].apply(lambda x: int(x[0][3]))
-        flights['origin_vertiport_id'] = flights['extracted_nums'].apply(lambda x: int(x[0][0]))
-        flights['destination_vertiport_id'] = flights['extracted_nums'].apply(lambda x: int(x[0][1]))
-        flights['time_slot'] = flights['extracted_nums'].apply(lambda x: int(x[0][2]))
-        flights['fare'] = flights.apply(lambda row: uam_fare[int(row['origin_vertiport_id']), int(row['destination_vertiport_id']), int(row['time_slot']//2)], axis=1)
-        flights['revenue'] = flights.apply(lambda row: row['num_pax'] * row['fare'] if row['value'] else 0, axis=1)
-        flights['cost'] = flights.apply(lambda row: uam_operating_cost[int(row['origin_vertiport_id']), int(row['destination_vertiport_id']), int(row['time_slot']//2)] if row['value'] else 0, axis=1)
-        flights['profit'] = flights['revenue'] - flights['cost']
+        flights["extracted_nums"] = flights["Variable"].apply(
+            self.extract_specific_numbers
+        )
+        flights["num_pax"] = flights["extracted_nums"].apply(lambda x: int(x[0][3]))
+        flights["origin_vertiport_id"] = flights["extracted_nums"].apply(
+            lambda x: int(x[0][0])
+        )
+        flights["destination_vertiport_id"] = flights["extracted_nums"].apply(
+            lambda x: int(x[0][1])
+        )
+        flights["time_slot"] = flights["extracted_nums"].apply(lambda x: int(x[0][2]))
+        flights["fare"] = flights.apply(
+            lambda row: uam_fare[
+                int(row["origin_vertiport_id"]),
+                int(row["destination_vertiport_id"]),
+                int(row["time_slot"] // 2),
+            ],
+            axis=1,
+        )
+        flights["revenue"] = flights.apply(
+            lambda row: row["num_pax"] * row["fare"] if row["value"] else 0, axis=1
+        )
+        flights["cost"] = flights.apply(
+            lambda row: uam_operating_cost[
+                int(row["origin_vertiport_id"]),
+                int(row["destination_vertiport_id"]),
+                int(row["time_slot"] // 2),
+            ]
+            if row["value"]
+            else 0,
+            axis=1,
+        )
+        flights["profit"] = flights["revenue"] - flights["cost"]
 
         pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*\]"
-        repo_flights = results[results['Variable'].str.contains(pattern, regex=True)].reset_index(drop=True)
-        repo_flights = repo_flights[repo_flights['value']  == 1].reset_index(drop=True)
-        repo_flights['extracted_nums'] = repo_flights['Variable'].apply(self.extract_specific_numbers)
-        repo_flights["repo_origin_vertiport_id"] = repo_flights['extracted_nums'].apply(lambda x: int(x[0][1]))
-        repo_flights["repo_destination_vertiport_id"] = repo_flights['extracted_nums'].apply(lambda x: int(x[1][0]))
-        repo_flights['repo_distance'] = repo_flights.apply(lambda row: self.network.flight_distance_matrix[int(row['repo_origin_vertiport_id']), int(row['repo_destination_vertiport_id'])], axis=1)
-        repo_flights['repo_cost'] = repo_flights['repo_distance'] * 4 * CASM
+        repo_flights = results[
+            results["Variable"].str.contains(pattern, regex=True)
+        ].reset_index(drop=True)
+        repo_flights = repo_flights[repo_flights["value"] == 1].reset_index(drop=True)
+        repo_flights["extracted_nums"] = repo_flights["Variable"].apply(
+            self.extract_specific_numbers
+        )
+        repo_flights["repo_origin_vertiport_id"] = repo_flights["extracted_nums"].apply(
+            lambda x: int(x[0][1])
+        )
+        repo_flights["repo_destination_vertiport_id"] = repo_flights[
+            "extracted_nums"
+        ].apply(lambda x: int(x[1][0]))
+        repo_flights["repo_distance"] = repo_flights.apply(
+            lambda row: self.network.flight_distance_matrix[
+                int(row["repo_origin_vertiport_id"]),
+                int(row["repo_destination_vertiport_id"]),
+            ],
+            axis=1,
+        )
+        repo_flights["repo_cost"] = repo_flights["repo_distance"] * 4 * CASM
 
         return flights, repo_flights
 
-
     @staticmethod
     def extract_specific_numbers(text):
-        parentheses_contents = re.findall(r'\((.*?)\)', str(text))
-        
+        parentheses_contents = re.findall(r"\((.*?)\)", str(text))
+
         result = []
         for content in parentheses_contents:
-            nums = re.findall(r'\d+', content)
+            nums = re.findall(r"\d+", content)
 
             if len(nums) >= 3:
                 result.append((nums[0], nums[1], nums[2], nums[-1]))
             elif nums:
                 result.append(tuple(nums))
-                
+
         return result
 
 
@@ -265,7 +377,6 @@ class FlightTask:
             return True
         else:
             return False
-
 
 
 class AssignmentNetwork:

@@ -96,7 +96,6 @@ class CostAnalyzer:
         else:
             fig = ax.figure
 
-
         rev_by_year = np.full(years, self.revenue)
         opex_by_year = np.full(years, self.total_opex)
         net_cash_flow = np.concatenate(

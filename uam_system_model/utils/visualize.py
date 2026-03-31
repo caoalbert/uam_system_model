@@ -22,13 +22,19 @@ matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
 
 def plot_travel_time(
-    travel_time_avg, vertiports, ax=None, dpi=300, ylim=(0, 100), ylabel="TNC Trip Time (min)"
+    travel_time_avg,
+    vertiports,
+    ax=None,
+    dpi=300,
+    ylim=(0, 100),
+    ylabel="TNC Trip Time (min)",
+    title=None,
 ):
     if ax is None:
         fig, ax = plt.subplots(figsize=(12, 4), ncols=2, dpi=dpi)
     else:
         fig = ax.figure
-        
+
     for i in range(1, len(vertiports)):
         ax[0].plot(
             np.arange(24),
@@ -60,8 +66,12 @@ def plot_travel_time(
         )
         ax[i].xaxis.set_minor_locator(minorLocator)
         ax[i].grid(True, alpha=0.25, linestyle="--", which="both")
-    ax[0].set_title("APT-Spokes")
-    ax[1].set_title("Spokes-APT")
+    if title:
+        ax[0].set_title(title[0])
+        ax[1].set_title(title[1])
+    else:
+        ax[0].set_title("APT-Spokes")
+        ax[1].set_title("Spokes-APT")
     fig.text(0.07, 0.5, ylabel, ha="center", va="center", rotation="vertical")
     plt.legend(title="Vertiports", bbox_to_anchor=(1.05, 1), loc="upper left")
 
@@ -71,7 +81,7 @@ def plot_travel_time(
 def plot_parameters(StarNetwork):
     mask = np.triu(np.ones_like(StarNetwork.flight_distance_matrix, dtype=bool), k=1)
 
-    fig = plt.figure(figsize=(26, 8), dpi=300)
+    fig = plt.figure(figsize=(28.5, 8.5), dpi=300)
     gs = gridspec.GridSpec(1, 6)  # 2 rows, 3 columns
 
     ax1 = fig.add_subplot(gs[0, 0:2])
@@ -124,8 +134,18 @@ def plot_parameters(StarNetwork):
     )
     ax3.invert_yaxis()
 
+    cbar = ax1.collections[0].colorbar
+    cbar.set_label("Distance (Miles)", fontsize=36)
+
+    cbar = ax2.collections[0].colorbar
+    cbar.set_label("Flight Time (min)", fontsize=36)
+
+    cbar = ax3.collections[0].colorbar
+    cbar.set_label("Energy Consumption \n (% SoC)", fontsize=36)
     for ax in [ax1, ax2, ax3]:
-        ax.title.set_fontsize(30)
+        ax.title.set_fontsize(36)
+        ax.set_xticklabels(ax.get_xticklabels(), fontsize=28, rotation=45, ha="center")
+        ax.set_yticklabels(ax.get_yticklabels(), fontsize=28, rotation=0, va="center")
         ax.grid(False)
     plt.tight_layout()
 

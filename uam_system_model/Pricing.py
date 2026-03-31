@@ -32,13 +32,17 @@ class PricingOptimizer:
         beta_cost=-0.0353,
         uam_transition_time=10,
         time_limit=1800,
-        CASM=0.79,
+        opex_per_asm=0.79,
+        num_seats=4,
+        fixed_cost_per_flight=20,
         verbose=True,
     ):
         if isinstance(value_of_time, int) or isinstance(value_of_time, float):
             value_of_time = [
                 value_of_time for _ in range(len(self.network.vertiport_dict))
             ]
+        elif len(value_of_time) != len(self.network.vertiport_dict):
+            raise ValueError("Length of value_of_time must match number of vertiports")
 
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
@@ -146,7 +150,9 @@ class PricingOptimizer:
             beta_cost_i.append(self.beta_cost[od_idx])
 
             distance = uam_distance_matrix[origin, destination]
-            flight_cost_uam.append(CASM * 4 * distance)
+            flight_cost_uam.append(
+                opex_per_asm * num_seats * distance + fixed_cost_per_flight
+            )
 
         uber_travel_time_i = np.array(uber_travel_time_i)
         uber_fare_i = np.array(uber_fare_i)
@@ -184,14 +190,15 @@ class PricingOptimizer:
         eps = 0.05
 
         m = Model("Pricing Problem")
-        m.Params.NonConvex = 2
+        m.Params.NonConvex = -1
         m.setParam("MIPGap", optimality_gap)
         m.setParam("TimeLimit", time_limit)
 
         m._x_vars = m.addVars(self.edges, vtype=GRB.INTEGER, name="x_ij")
-        m._x_inverse_vars = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, name="x_ij_inverse", lb=0
-        )
+        if utility_type == "vot":
+            m._x_inverse_vars = m.addVars(
+                self.edges, vtype=GRB.CONTINUOUS, name="x_ij_inverse", lb=0
+            )
 
         m._theta_uam = m.addVars(
             len(non_zero_indices),
@@ -253,23 +260,29 @@ class PricingOptimizer:
                 >= m._theta_uam[i] * di_bar_selected_x[i],
                 f"cap_{i}",
             )
-            m.addGenConstrPWL(
-                m._x_vars[self.edges[idx]],
-                m._x_inverse_vars[self.edges[idx]],
-                x_inverse_s,
-                y_inverse_s,
-                name=f"inv_pwl_{i}",
-            )
+            if utility_type == "vot":
+                m.addGenConstrPWL(
+                    m._x_vars[self.edges[idx]],
+                    m._x_inverse_vars[self.edges[idx]],
+                    x_inverse_s,
+                    y_inverse_s,
+                    name=f"inv_pwl_{i}",
+                )
 
         operating_cost = quicksum(
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
             for i_non_zero, i in zip(range(len(di_bar_selected_x)), non_zero_indices)
-        ) +  quicksum(
-            m._x_vars[self.edges[i]] * CASM * 4 * di_bar_selected_negative[i_zero]
+        ) + quicksum(
+            -1
+            * m._x_vars[self.edges[i]]
+            * (
+                opex_per_asm * num_seats * di_bar_selected_negative[i_zero]
+                - fixed_cost_per_flight
+            )
+            if di_bar_selected_negative[i_zero] < -0.0001
+            else 0
             for i_zero, i in zip(range(len(di_bar_selected_negative)), negative_indices)
-        ) # the second part is repositioning flight cost
-
-
+        )  # the second part is repositioning flight cost
 
         if utility_type == "vot":
             cost_level_of_service = quicksum(
@@ -325,27 +338,53 @@ class PricingOptimizer:
                 for i_non_zero in range(len(di_bar_selected_x))
             )
 
-            # objective = theta_terms + other_terms + operating_cost + cost_level_of_service
-            objective = theta_terms + other_terms + operating_cost
+            cost_level_of_service_terms = []
+
+            for i_non_zero, idx in enumerate(non_zero_indices):
+                theta_var = m._theta_uam[i_non_zero]
+                x_var = m._x_vars[self.edges[idx]]
+
+                factor = (
+                    di_bar_selected_x[i_non_zero]
+                    * beta_time_i[i_non_zero]
+                    * self.time_resolution
+                ) / (2 * beta_cost_i[i_non_zero])
+                b_vars = m.addVars(int(max_flights + 1), vtype=GRB.BINARY, name=f"b_{idx}")
+
+                w_vars = m.addVars(
+                    int(max_flights + 1), vtype=GRB.CONTINUOUS, lb=0, ub=1, name=f"w_{idx}"
+                )
+                m.addConstr(
+                    x_var == quicksum(k * b_vars[k] for k in range(int(max_flights + 1))),
+                    f"link_x_b_{idx}",
+                )
+                m.addConstr(
+                    quicksum(b_vars[k] for k in range(int(max_flights + 1))) == 1,
+                    f"one_b_{idx}",
+                )
+
+                for k in range(int(max_flights + 1)):
+                    m.addConstr(w_vars[k] <= b_vars[k], f"mc1_{idx}_{k}")
+                    m.addConstr(w_vars[k] <= theta_var, f"mc2_{idx}_{k}")
+                    m.addConstr(
+                        w_vars[k] >= theta_var - (1 - b_vars[k]), f"mc3_{idx}_{k}"
+                    )
+
+                    if k == 0:
+                        cost_level_of_service_terms.append(0)  # Penalty for no flights
+                    else:
+                        effective_k = min(k, 5)
+                        cost_level_of_service_terms.append(
+                            w_vars[k] * (factor / effective_k)
+                        )
+
+            cost_level_of_service = quicksum(cost_level_of_service_terms)
+            objective = (
+                theta_terms + other_terms + operating_cost + cost_level_of_service
+            )
 
         m.setObjective(objective, GRB.MINIMIZE)
 
-        if utility_type == "betas":
-            max_v = max_flights
-            for i, idx in enumerate(non_zero_indices):
-                current_los_costs = []
-                factor = (
-                    di_bar_selected_x[i] * beta_time_i[i] * self.time_resolution
-                ) / (2 * beta_cost_i[i])
-                for k in range(max_v + 1):
-                    if k == 0:
-                        current_los_costs.append(1e6)  # Penalty for no service
-                    else:
-                        current_los_costs.append(factor * (1.0 / k))
-
-                m.setPWLObj(
-                    m._x_vars[self.edges[idx]], range(max_v + 1), current_los_costs
-                )
         if not verbose:
             m.setParam("OutputFlag", 0)
         m.update()
@@ -439,7 +478,45 @@ class PricingOptimizer:
         df["rev_per_mile"] = df["fare"] / df["distance"]
         df["total_revenue"] = df["fare"] * df["uam_pax"]
 
-        return df
+        pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*\]"
+        repo_flights = results[results["Variable"].str.contains(pattern, regex=True)]
+        repo_flights = repo_flights.reset_index(drop=True)
+
+        pattern = r"\('Task_(\d+)', 'finish'\),\('Task_(\d+)', 'start'\)"
+        repo_flights[["finish_task", "start_task"]] = (
+            repo_flights["Variable"]
+            .str.extract(pattern)
+            .reset_index(drop=True)
+            .astype(int)
+        )
+        repo_flights["origin_vertiport_id"] = repo_flights["finish_task"].apply(
+            lambda x: self.pax_arr_grouped.loc[x, "destination_vertiport_id"]
+        )
+        repo_flights["destination_vertiport_id"] = repo_flights["start_task"].apply(
+            lambda x: self.pax_arr_grouped.loc[x, "origin_vertiport_id"]
+        )
+        repo_flights["repo_flight_time"] = repo_flights.apply(
+            lambda row: self.flight_time_matrix[
+                row["origin_vertiport_id"], row["destination_vertiport_id"]
+            ],
+            axis=1,
+        )
+        repo_flights["time_slot"] = repo_flights["start_task"].apply(
+            lambda x: self.pax_arr_grouped.loc[x, "passenger_arrival_time_slot"]
+        )
+        repo_flights["repositioning_distance"] = repo_flights.apply(
+            lambda row: uam_distance_matrix[
+                row["origin_vertiport_id"], row["destination_vertiport_id"]
+            ],
+            axis=1,
+        )
+        repo_flights["cost"] = repo_flights["repositioning_distance"].apply(
+            lambda x: opex_per_asm * num_seats * x + fixed_cost_per_flight
+            if x > 0
+            else 0
+        )
+
+        return df, repo_flights
 
     @staticmethod
     def calc_fare_vot(
@@ -605,6 +682,6 @@ class AssignmentNetwork:
                     repo_distance = self.list_of_tasks[i].uam_distance_matrix[
                         self.list_of_tasks[i].destination, self.list_of_tasks[j].origin
                     ]
-                    di_bar.append(-1 * repo_distance) 
+                    di_bar.append(-1 * repo_distance)
 
         return reassignment_edges, di_bar

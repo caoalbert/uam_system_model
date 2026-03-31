@@ -61,7 +61,7 @@ class PricingOpSummary(PricingOptimizer):
             fig, ax = plt.subplots(figsize=(4, 2.5), dpi=dpi)
         else:
             fig = ax.figure
-            
+
         df_grouped = self.policy.groupby(["passenger_arrival_time_slot"])[
             "rev_per_mile"
         ].mean()
@@ -91,7 +91,7 @@ class PricingOpSummary(PricingOptimizer):
         if ax is None:
             fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         else:
-            fig = ax.figure 
+            fig = ax.figure
         sns.lineplot(
             data=self.policy,
             x="passenger_arrival_time_slot",

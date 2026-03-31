@@ -91,12 +91,12 @@ if __name__ == "__main__":
 
     network.load_demand(df)
 
-    uber_travel_time = np.zeros(shape=(len(vertiports), len(vertiports), 24))
-    uber_fare = np.zeros(shape=(len(vertiports), len(vertiports), 24))
-    first_or_last_distance = np.zeros(shape=(len(vertiports), len(vertiports), 24))
+    driving_travel_time = np.zeros(shape=(len(vertiports), len(vertiports), 24))
+    driving_cost = np.zeros(shape=(len(vertiports), len(vertiports), 24))
 
     first_mile = np.zeros(shape=(len(vertiports), 24)) 
     last_mile = np.zeros(shape=(len(vertiports), 24))
+    first_or_last_cost = np.zeros(shape=(len(vertiports), len(vertiports), 24))  # Assuming first and last mile costs are included in the driving cost
 
     def fill_od(csv_path, o, d):
         tmp = pd.read_csv(csv_path)
@@ -106,10 +106,11 @@ if __name__ == "__main__":
         od_df = od_df.reset_index()
         for _, row in od_df.iterrows():
             h = int(row['hour'])
-            uber_travel_time[o,d,h] = row["Driving_IVTT_min"]
+            driving_travel_time[o,d,h] = row["Driving_IVTT_min"]
             first_mile[o,h] = row["FM_duration_min"]
             last_mile[d,h] = row["LM_duration_min"]
-            uber_fare[o,d,h] = row["Driving_Fare_USD"]
+            driving_cost[o,d,h] = row["Driving_Fare_USD"]
+            first_or_last_cost[o,d,h] = row["FM_fare_USD"] + row["LM_fare_USD"]
 
     fill_od("data/uiuc_c.csv", 0, 1)
     fill_od("data/c_uiuc.csv", 1, 0)
@@ -118,38 +119,34 @@ if __name__ == "__main__":
     fill_od("data/uiuc_mdw.csv", 0, 3)
     fill_od("data/mdw_uiuc.csv", 3, 0)
 
-    first_or_last_distance = np.array([
-        [0, 4, 4, 4],
-        [4, 0, 4, 4],
-        [4, 4, 0, 4],
-        [4, 4, 4, 0],
-    ])  # in miles
-    first_or_last_distance = np.repeat(first_or_last_distance[:, :, np.newaxis], 24, axis=2)
-
-
     op = PricingOptimizer(StarNetwork=network)
 
     fs = np.arange(10, 65, 5)
-    casm = np.arange(0.6, 1.6, 0.1)
+    opex_per_asm = np.arange(0.6, 1.6, 0.1)
 
     for f in fs:
-        for c in casm:
+        for c in opex_per_asm:
             print(f"Running optimization for fleet size {f} and CASM {c}...")
             df = op.optimize(
-                time_resolution=30,
-                num_vehicles=f,
-                uber_travel_time=uber_travel_time,
-                uber_fare=uber_fare,
-                first_mile_time=first_mile,
+            time_resolution=30,
+            num_vehicles=f,
+            uber_travel_time=driving_travel_time,
+            uber_fare=driving_cost,
+            first_mile_time=first_mile,
             last_mile_time=last_mile,
-            first_or_last_distance=first_or_last_distance,
+            first_or_last_cost=first_or_last_cost,  # Assuming first and last mile costs are included in the driving cost
             uam_flight_time = flight_time_matrix,
             uam_distance_matrix=flight_distance_matrix,
             optimality_gap=0.05,
             value_of_time=32.63,
             time_limit=3600,
+            uam_transition_time=10,
             utility_type="betas",
-            CASM=c,
+            opex_per_asm=c,
+            fato_capacity = 10,  # capacity per time interval for FATO constraint
+            num_seats=4,
+            fixed_cost_per_flight=20,
             verbose=False
-        )
-            df.to_csv(f"results2/{f}_{round(c*10, 0)}.csv", index=False)
+            )
+            df[0].to_csv(f"results2/{f}_{round(c*10, 0)}.csv", index=False)
+            df[1].to_csv(f"results2/task_log_{f}_{round(c*10, 0)}.csv", index=False)

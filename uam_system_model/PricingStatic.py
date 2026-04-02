@@ -29,7 +29,9 @@ class PricingOptimizerStatic:
         beta_time=-0.0192,
         beta_cost=-0.0353,
         uam_transition_time=10,
-        CASM=0.79,
+        opex_per_asm=0.79,
+        num_seats=4,
+        fix_cost_per_flight=20,
         verbose=True,
     ):
         if isinstance(value_of_time, int) or isinstance(value_of_time, float):
@@ -46,6 +48,9 @@ class PricingOptimizerStatic:
         pax_arr = self.network.pax_arrival_times.copy()
         self.time_resolution = time_resolution
         self.num_vehicles = num_vehicles
+        self.opex_per_asm = opex_per_asm
+        self.num_seats = num_seats
+        self.fix_cost_per_flight = fix_cost_per_flight
 
         self.beta_time = [0] + [
             beta_cost * value_of_time[i] / 60
@@ -76,8 +81,8 @@ class PricingOptimizerStatic:
         )
         uam_operating_cost = (
             np.repeat(self.network.flight_distance_matrix[:, :, np.newaxis], 24, axis=2)
-            * CASM
-            * 4
+            * opex_per_asm
+            * num_seats
         )
 
         uam_cost = np.zeros(
@@ -188,7 +193,7 @@ class PricingOptimizerStatic:
             flight_id = 0
             while count > 0:
                 num_pax = min(
-                    count, 4
+                    count, num_seats
                 )  # Assuming each flight can take up to 4 passengers
                 all_tasks.append(
                     FlightTask(
@@ -211,7 +216,11 @@ class PricingOptimizerStatic:
                 flight_id += 1
 
         assignment_network = AssignmentNetwork(
-            all_tasks, num_vehicles=num_vehicles, CASM=CASM
+            all_tasks,
+            num_vehicles=num_vehicles,
+            opex_per_asm=opex_per_asm,
+            num_seats=num_seats,
+            fix_cost_per_flight=fix_cost_per_flight,
         )
         (
             self.nodes,
@@ -252,7 +261,7 @@ class PricingOptimizerStatic:
             decisions.append(var.varName)
             value.append(var.x)
 
-        results = pd.DataFrame({"Variable": decisions, "value": value})
+        results = pd.DataFrame({"Variable": decisions, "Value": value})
         pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*\]"
         flights = results[
             results["Variable"].str.contains(pattern, regex=True)
@@ -263,7 +272,7 @@ class PricingOptimizerStatic:
         flights["extracted_nums"] = flights["Variable"].apply(
             self.extract_specific_numbers
         )
-        flights["num_pax"] = flights["extracted_nums"].apply(lambda x: int(x[0][3]))
+        flights["uam_pax"] = flights["extracted_nums"].apply(lambda x: int(x[0][3]))
         flights["origin_vertiport_id"] = flights["extracted_nums"].apply(
             lambda x: int(x[0][0])
         )
@@ -279,8 +288,8 @@ class PricingOptimizerStatic:
             ],
             axis=1,
         )
-        flights["revenue"] = flights.apply(
-            lambda row: row["num_pax"] * row["fare"] if row["value"] else 0, axis=1
+        flights["total_revenue"] = flights.apply(
+            lambda row: row["uam_pax"] * row["fare"] if row["Value"] else 0, axis=1
         )
         flights["cost"] = flights.apply(
             lambda row: uam_operating_cost[
@@ -288,34 +297,48 @@ class PricingOptimizerStatic:
                 int(row["destination_vertiport_id"]),
                 int(row["time_slot"] // 2),
             ]
-            if row["value"]
+            if row["Value"]
             else 0,
             axis=1,
         )
-        flights["profit"] = flights["revenue"] - flights["cost"]
+        flights["distance"] = flights.apply(
+            lambda row: self.network.flight_distance_matrix[
+                int(row["origin_vertiport_id"]),
+                int(row["destination_vertiport_id"]),
+            ]
+            if row["Value"]
+            else 0,
+            axis=1,
+        )
+        flights["profit"] = flights["total_revenue"] - flights["cost"]
+        flights["num_flights"] = flights["Value"]
+        flights = flights[flights["Value"] == 1].reset_index(drop=True)
 
         pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*\]"
         repo_flights = results[
             results["Variable"].str.contains(pattern, regex=True)
         ].reset_index(drop=True)
-        repo_flights = repo_flights[repo_flights["value"] == 1].reset_index(drop=True)
+        repo_flights = repo_flights[repo_flights["Value"] == 1].reset_index(drop=True)
         repo_flights["extracted_nums"] = repo_flights["Variable"].apply(
             self.extract_specific_numbers
         )
-        repo_flights["repo_origin_vertiport_id"] = repo_flights["extracted_nums"].apply(
+        repo_flights["origin_vertiport_id"] = repo_flights["extracted_nums"].apply(
             lambda x: int(x[0][1])
         )
-        repo_flights["repo_destination_vertiport_id"] = repo_flights[
-            "extracted_nums"
-        ].apply(lambda x: int(x[1][0]))
-        repo_flights["repo_distance"] = repo_flights.apply(
+        repo_flights["destination_vertiport_id"] = repo_flights["extracted_nums"].apply(
+            lambda x: int(x[1][0])
+        )
+        repo_flights["repositioning_distance"] = repo_flights.apply(
             lambda row: self.network.flight_distance_matrix[
-                int(row["repo_origin_vertiport_id"]),
-                int(row["repo_destination_vertiport_id"]),
+                int(row["origin_vertiport_id"]),
+                int(row["destination_vertiport_id"]),
             ],
             axis=1,
         )
-        repo_flights["repo_cost"] = repo_flights["repo_distance"] * 4 * CASM
+        repo_flights["cost"] = (
+            repo_flights["repositioning_distance"] * self.num_seats * self.opex_per_asm
+            + self.fix_cost_per_flight
+        )
 
         return flights, repo_flights
 
@@ -380,10 +403,14 @@ class FlightTask:
 
 
 class AssignmentNetwork:
-    def __init__(self, list_of_tasks, num_vehicles, CASM):
+    def __init__(
+        self, list_of_tasks, num_vehicles, opex_per_asm, num_seats, fix_cost_per_flight
+    ):
         self.list_of_tasks = list_of_tasks
         self.num_vehicles = num_vehicles
-        self.CASM = CASM
+        self.opex_per_asm = opex_per_asm
+        self.num_seats = num_seats
+        self.fix_cost_per_flight = fix_cost_per_flight
 
     def populate_network(self):
         nodes, supply = self._create_nodes()
@@ -447,6 +474,9 @@ class AssignmentNetwork:
                     repo_distance = self.list_of_tasks[i].uam_distance_matrix[
                         self.list_of_tasks[i].destination, self.list_of_tasks[j].origin
                     ]
-                    di_bar.append(-1 * repo_distance * 4 * self.CASM)
+                    di_bar.append(
+                        -1 * repo_distance * self.num_seats * self.opex_per_asm
+                        - self.fix_cost_per_flight
+                    )
 
         return reassignment_edges, di_bar

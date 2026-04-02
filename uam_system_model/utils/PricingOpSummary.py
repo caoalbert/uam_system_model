@@ -2,6 +2,7 @@ import matplotlib
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator
@@ -24,29 +25,54 @@ matplotlib.rcParams.update({"legend.fontsize": 14, "legend.handlelength": 2})
 
 from uam_system_model.Pricing import PricingOptimizer
 
-# import pandas as pd
-
 
 class PricingOpSummary(PricingOptimizer):
     def __init__(self, StarNetwork, policy):
         super().__init__(StarNetwork)
+        slots = pd.DataFrame(
+            {
+                "passenger_arrival_time_slot": policy[
+                    "passenger_arrival_time_slot"
+                ].unique()
+            }
+        )
+        origins = pd.DataFrame({"origin": ["apt_dt", "dt_apt"]})
+        destinations = pd.DataFrame(
+            {"destination": list(self.network.vertiport_dict.values())[1:]}
+        )
+
+        all_combos = slots.merge(origins, how="cross").merge(destinations, how="cross")
+        all_combos["origin_vertiport_id"] = all_combos.apply(
+            lambda row: 0 if row["origin"] == "apt_dt" else row["destination"], axis=1
+        )
+        all_combos["destination_vertiport_id"] = all_combos.apply(
+            lambda row: row["destination"] if row["origin"] == "apt_dt" else 0, axis=1
+        )
+        all_combos = all_combos[
+            [
+                "passenger_arrival_time_slot",
+                "origin_vertiport_id",
+                "destination_vertiport_id",
+            ]
+        ]
+
+        policy = pd.merge(
+            all_combos,
+            policy,
+            on=[
+                "passenger_arrival_time_slot",
+                "origin_vertiport_id",
+                "destination_vertiport_id",
+            ],
+            how="outer",
+        )
+        policy["markets"] = policy.apply(
+            lambda row: self.network.vertiport_dict_inv[row["destination_vertiport_id"]]
+            if row["origin_vertiport_id"] == 0
+            else self.network.vertiport_dict_inv[row["origin_vertiport_id"]],
+            axis=1,
+        )
         self.policy = policy
-
-    #     all_routing = pd.DataFrame({'passenger_arrival_time_slot': np.repeat(np.arange(49), 16),
-    #                                 'origin_vertiport_id': np.tile(np.concatenate((np.repeat(0, 8), np.arange(1, 9))), 49),
-    #                                 'destination_vertiport_id': np.tile(np.concatenate((np.arange(1, 9),np.repeat(0, 8))), 49),
-    #                             })
-    #     all_routing = pd.merge(policy, all_routing, on=['passenger_arrival_time_slot', 'origin_vertiport_id', 'destination_vertiport_id'], how='outer')
-
-    #     all_routing['markets'] = all_routing.apply(self.identify_market, axis=1)
-
-    #     self.policy = all_routing
-
-    # def identify_market(self, row):
-    #     if row['origin_vertiport_id'] == 0:
-    #         return self.network.vertiport_dict_inv[row['destination_vertiport_id']]
-    #     else:
-    #         return self.network.vertiport_dict_inv[row['origin_vertiport_id']]
 
     def get_summary_statistics(self):
         summary_stats = {}
@@ -82,8 +108,10 @@ class PricingOpSummary(PricingOptimizer):
             ylim=ylim,
             title="Average RASM over Passengers",
         )
-        ax.xaxis.set_major_locator(MultipleLocator(2))
-        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.xaxis.set_major_locator(MultipleLocator(12))
+        ax.xaxis.set_minor_locator(MultipleLocator(2))
+        ax.grid(True, which="major", linestyle="--", alpha=0.6, linewidth=1)
+        ax.grid(True, which="minor", linestyle="--", alpha=0.2, linewidth=1)
 
         return fig, ax
 
@@ -92,28 +120,44 @@ class PricingOpSummary(PricingOptimizer):
             fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         else:
             fig = ax.figure
-        sns.lineplot(
-            data=self.policy,
-            x="passenger_arrival_time_slot",
-            hue="markets",
-            hue_order=self.network.vertiports[1:],
-            y="rev_per_mile",
-            marker="o",
-            err_style=None,
-            palette=custom_colors,
-            ax=ax,
-        )
+
+        markets_order = self.network.vertiports[1:]
+
+        for i, market in enumerate(markets_order):
+            market_data = self.policy[self.policy["markets"] == market]
+            market_data_agg = (
+                market_data.groupby("passenger_arrival_time_slot")["rev_per_mile"]
+                .mean()
+                .reset_index()
+                .sort_values("passenger_arrival_time_slot")
+            )
+            color = (
+                custom_colors[i]
+                if isinstance(custom_colors, list)
+                else custom_colors.get(market)
+            )
+            ax.plot(
+                market_data_agg["passenger_arrival_time_slot"],
+                market_data_agg["rev_per_mile"],
+                label=market,
+                marker="o",
+                markeredgecolor="white",
+                color=color,
+            )
+
         ax.set(
             xticks=np.arange(0, 49, 12),
             xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
             xlabel="",
-            ylabel="RASM ($)",
+            ylabel="Fare per mile ($/mile)",
             xlim=(0, 48),
-            title="Average RASM by ODs",
+            title="Average Fare per Mile by Market",
             ylim=ylim,
         )
-        ax.xaxis.set_major_locator(MultipleLocator(2))
-        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.xaxis.set_major_locator(MultipleLocator(12))
+        ax.xaxis.set_minor_locator(MultipleLocator(2))
+        ax.grid(True, which="major", linestyle="--", alpha=0.6, linewidth=1)
+        ax.grid(True, which="minor", linestyle="--", alpha=0.2, linewidth=1)
         ax.legend(bbox_to_anchor=(1.02, 0.85), loc="upper left", borderaxespad=0.0)
 
         return fig, ax
@@ -123,28 +167,44 @@ class PricingOpSummary(PricingOptimizer):
             fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         else:
             fig = ax.figure
-        sns.lineplot(
-            data=self.policy,
-            x="passenger_arrival_time_slot",
-            y="fare",
-            hue="markets",
-            hue_order=self.network.vertiports[1:],
-            err_style=None,
-            legend=True,
-            marker="o",
-            palette=custom_colors,
-            ax=ax,
-        )
+
+        markets_order = self.network.vertiports[1:]
+
+        for i, market in enumerate(markets_order):
+            market_data = self.policy[self.policy["markets"] == market]
+            market_data_agg = (
+                market_data.groupby("passenger_arrival_time_slot")["fare"]
+                .mean()
+                .reset_index()
+                .sort_values("passenger_arrival_time_slot")
+            )
+
+            color = (
+                custom_colors[i]
+                if isinstance(custom_colors, list)
+                else custom_colors.get(market)
+            )
+            ax.plot(
+                market_data_agg["passenger_arrival_time_slot"],
+                market_data_agg["fare"],
+                label=market,
+                marker="o",
+                markeredgecolor="white",
+                color=color,
+            )
+
         ax.set(
             xticks=np.arange(0, 49, 12),
             xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
             xlabel="",
             ylabel="Fare ($)",
             xlim=(0, 48),
-            title="Average Fare by ODs",
+            title="Average Fare by Market",
         )
-        ax.xaxis.set_major_locator(MultipleLocator(2))
-        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.xaxis.set_major_locator(MultipleLocator(12))
+        ax.xaxis.set_minor_locator(MultipleLocator(2))
+        ax.grid(True, which="major", linestyle="--", alpha=0.6, linewidth=1)
+        ax.grid(True, which="minor", linestyle="--", alpha=0.2, linewidth=1)
         ax.legend(bbox_to_anchor=(1.02, 0.85), loc="upper left", borderaxespad=0.0)
 
         return fig, ax
@@ -154,18 +214,24 @@ class PricingOpSummary(PricingOptimizer):
             fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         else:
             fig = ax.figure
-        sns.lineplot(
-            data=self.policy,
-            x="passenger_arrival_time_slot",
-            y="total_revenue",
-            hue="markets",
-            hue_order=self.network.vertiports[1:],
-            err_style=None,
-            legend=True,
-            marker="o",
-            palette=custom_colors,
-            ax=ax,
-        )
+
+        markets = self.network.vertiports[1:]
+        for i, market in enumerate(markets):
+            subset = self.policy[self.policy["markets"] == market]
+            if isinstance(custom_colors, dict):
+                color = custom_colors.get(market)
+            else:
+                color = custom_colors[i % len(custom_colors)]
+
+            ax.plot(
+                subset["passenger_arrival_time_slot"],
+                subset["total_revenue"],
+                marker="o",
+                markeredgecolor="white",
+                linestyle="-",  # Explicitly add the line (seaborn does this by default)
+                color=color,
+                label=str(market),  # Assign the label so ax.legend() picks it up
+            )
         ax.set(
             xticks=np.arange(0, 49, 12),
             xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
@@ -175,8 +241,10 @@ class PricingOpSummary(PricingOptimizer):
             ylim=ylim,
             title="Total Revenue by ODs",
         )
-        ax.xaxis.set_major_locator(MultipleLocator(2))
-        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.xaxis.set_major_locator(MultipleLocator(12))
+        ax.xaxis.set_minor_locator(MultipleLocator(2))
+        ax.grid(True, which="major", linestyle="--", alpha=0.6, linewidth=1)
+        ax.grid(True, which="minor", linestyle="--", alpha=0.2, linewidth=1)
         ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
 
         return fig, ax
@@ -186,18 +254,30 @@ class PricingOpSummary(PricingOptimizer):
             fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
         else:
             fig = ax.figure
-        sns.lineplot(
-            data=self.policy,
-            x="passenger_arrival_time_slot",
-            y="percentage_uam",
-            hue="markets",
-            hue_order=self.network.vertiports[1:],
-            err_style=None,
-            legend=True,
-            marker="o",
-            palette=custom_colors,
-            ax=ax,
-        )
+
+        markets_order = self.network.vertiports[1:]
+
+        for i, market in enumerate(markets_order):
+            market_data = self.policy[self.policy["markets"] == market]
+            market_data_agg = (
+                market_data.groupby("passenger_arrival_time_slot")["percentage_uam"]
+                .mean()
+                .reset_index()
+            )
+
+            color = (
+                custom_colors[i]
+                if isinstance(custom_colors, list)
+                else custom_colors.get(market)
+            )
+            ax.plot(
+                market_data_agg["passenger_arrival_time_slot"],
+                market_data_agg["percentage_uam"],
+                label=market,
+                marker="o",
+                color=color,
+            )
+
         ax.set(
             xticks=np.arange(0, 49, 12),
             xticklabels=[str(i) + ":00" for i in range(0, 26, 6)],
@@ -206,8 +286,16 @@ class PricingOpSummary(PricingOptimizer):
             xlim=(0, 48),
             title="UAM Market Share by ODs",
         )
-        ax.xaxis.set_major_locator(MultipleLocator(2))
-        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.xaxis.set_major_locator(MultipleLocator(12))
+        ax.xaxis.set_minor_locator(MultipleLocator(2))
+        ax.yaxis.set_major_locator(MultipleLocator(0.2))
+
+        ax.grid(
+            True, which="major", color="gray", linestyle="--", alpha=0.6, linewidth=0.5
+        )
+        ax.grid(
+            True, which="minor", color="gray", linestyle="--", alpha=0.2, linewidth=0.5
+        )
         ax.legend(bbox_to_anchor=(1.02, 0.95), loc="upper left", borderaxespad=0.0)
 
         return fig, ax

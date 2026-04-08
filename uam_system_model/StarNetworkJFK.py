@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from .ScheduleGeneratorJFK import ScheduleGenerator
-from .utils.schedule_utils import *
+from .utils.schedule_utils import generate_uam_schedule
 from .utils.visualize import plot_travel_time
 
 
@@ -82,7 +82,11 @@ class StarNetwork:
             ]
 
         fig, ax = plot_travel_time(
-            input_to_viz, self.vertiports, ylim=ylim, ylabel="Number of Flights"
+            input_to_viz,
+            self.vertiports,
+            ylim=ylim,
+            ylabel="Number of Flights",
+            title=["JFK-Spokes", "Spokes-JFK"],
         )
 
         return fig, ax
@@ -108,7 +112,11 @@ class StarNetwork:
             input_to_viz[o, d, h] = row["counts"]
 
         fig, ax = plot_travel_time(
-            input_to_viz, self.vertiports, ylim=ylim, ylabel="Number of Passengers"
+            input_to_viz,
+            self.vertiports,
+            ylim=ylim,
+            ylabel="Number of Passengers",
+            title=["JFK-Spokes", "Spokes-JFK"],
         )
 
         return fig, ax

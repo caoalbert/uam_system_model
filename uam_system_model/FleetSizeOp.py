@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from gurobipy import *
+from gurobipy import GRB, Model, quicksum
 
 font = {"size": 24}
 matplotlib.rc("font", **font)
@@ -96,7 +96,7 @@ class FleetSizeOptimizer:
 
         # Check the dimension of flight time and energy consumption. Make sure they are time-varying.
         if len(self.flight_time.shape) != len(self.energy_consumption.shape):
-            raise DimensionError(
+            raise ValueError(
                 "The dimension of the flight time array must match the dimension of the energy consumption array"
             )
         if len(self.flight_time.shape) == 2:

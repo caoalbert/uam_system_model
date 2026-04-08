@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from .ScheduleGenerator import ScheduleGenerator
-from .utils.schedule_utils import *
+from .utils.schedule_utils import generate_uam_schedule
 from .utils.visualize import plot_travel_time
 
 

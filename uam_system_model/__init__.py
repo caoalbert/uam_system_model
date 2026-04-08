@@ -22,4 +22,5 @@ def ensure_data():
         print("Download complete.")
 
 
-ensure_data()
+# Call ensure_data() explicitly before using the package if data files are not present locally.
+# e.g.: from uam_system_model import ensure_data; ensure_data()

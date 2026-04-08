@@ -3,7 +3,7 @@ import re
 
 import numpy as np
 import pandas as pd
-from gurobipy import *
+from gurobipy import GRB, Model, quicksum
 from tqdm import tqdm
 
 

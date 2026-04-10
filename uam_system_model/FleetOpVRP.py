@@ -1,4 +1,5 @@
 import logging
+import math
 import multiprocessing
 import re
 from time import time
@@ -53,6 +54,7 @@ class FleetOpVRP:
         linear_battery_charging=False,
         n_processes=16,
         verbose=False,
+        alns_iterations=30,
     ):
         """
         param num_vehicles: Number of vehicles in the fleet
@@ -62,6 +64,7 @@ class FleetOpVRP:
         param linear_battery_charging: If True, use linear battery charging model
         param n_processes: Number of parallel processes to use for solving the VRP
         param verbose: If True, print verbose output during network construction
+        param alns_iterations: Number of ALNS iterations for post-processing (0 disables ALNS, falls back to single-pass insertion)
         """
 
         self.linear = linear_battery_charging
@@ -114,8 +117,14 @@ class FleetOpVRP:
             f"NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())} / {int(num_flights_selected)}"
         )
 
-        logger.info("[5] Iterative Insertion")
-        unserved_tours, served_tours = self._crossover(unserved_tours, served_tours)
+        if alns_iterations > 0 and not unserved_tours.empty:
+            logger.info(f"[5] ALNS POST-PROCESSING ({alns_iterations} iterations)")
+            unserved_tours, served_tours = self._alns(
+                unserved_tours, served_tours, n_iter=alns_iterations
+            )
+        else:
+            logger.info("[5] Iterative Insertion (single-pass)")
+            unserved_tours, served_tours = self._crossover(unserved_tours, served_tours)
         logger.info("OPTIMIZATION COMPLETE")
         logger.info(
             f"TOTAL NUMBER OF SERVED FLIGHTS: {int(served_tours['tour_length'].sum())}. SERVED RATIO: {served_tours['tour_length'].sum() / self.flight_demand['count'].sum()}"
@@ -124,6 +133,43 @@ class FleetOpVRP:
         logger.info(f"Total time taken: {(end_time - start_time)/60} minutes \n")
 
         return unserved_tours, served_tours
+
+    def solve_exact(self, num_vehicles, time_limit=3600, optimality_gap=0.01):
+        """
+        Solve the full eUAMVRP-NL to (near-)optimality using Gurobi as a MIP benchmark.
+        Intended for small instances only (≤20 flight tasks, ≤3 vehicles).
+
+        Must be called after optimize() has run (so self.demand2 is populated), or
+        after manually calling _BuildSubtours, _BinPacking, and _UpdateDemand.
+
+        Returns
+        -------
+        obj_val   : float  - best objective value found
+        mip_gap   : float  - final MIP gap
+        runtime_s : float  - wall-clock solve time in seconds
+        served    : DataFrame
+        unserved  : DataFrame
+        """
+        if not hasattr(self, "demand2"):
+            raise RuntimeError(
+                "Call optimize() first (or build demand2 manually) before solve_exact()."
+            )
+        demand = self.demand2.copy()
+        demand[["duration", "time"]] = demand[["duration", "time"]] * 5
+
+        m, not_served = self._RunVRP(
+            demand,
+            K=num_vehicles,
+            resolve=False,
+            time_limit=time_limit,
+            optimality_gap=optimality_gap,
+        )
+
+        idx_served = [i for i in range(len(demand)) if i not in not_served]
+        served = demand.iloc[idx_served].copy().reset_index(drop=True)
+        unserved = demand.iloc[not_served].copy().reset_index(drop=True)
+
+        return m.ObjVal, m.MIPGap, m.Runtime, served, unserved
 
     def _BuildSubtours(self):
         # max_tour_energy (in fraction of battery capacity)
@@ -571,6 +617,208 @@ class FleetOpVRP:
             )
         return unserved_tours, served_tours
 
+    # ------------------------------------------------------------------
+    # ALNS: Adaptive Large Neighborhood Search (addresses Reviewer 1 #2)
+    # Uses random removal + time-related removal as destroy operators,
+    # greedy insertion + regret-2 insertion as repair operators.
+    # Acceptance criterion: simulated annealing with geometric cooling.
+    # ------------------------------------------------------------------
+
+    def _alns(self, unserved_tours, served_tours, n_iter=30):
+        """
+        ALNS post-processing loop. Iteratively destroys part of the current
+        solution and repairs it, accepting improvements (and occasionally
+        worse solutions) via simulated annealing.
+        """
+        import random
+
+        rng = random.Random(42)
+
+        # Operator weights: [random_removal, related_removal] x [greedy, regret2]
+        destroy_weights = [1.0, 1.0]
+        repair_weights = [1.0, 1.0]
+        destroy_ops = [self._random_removal, self._related_removal]
+        repair_ops = [self._greedy_insert, self._regret2_insert]
+
+        # Score multipliers for weight update
+        SCORE_BEST = 3.0
+        SCORE_IMPROVE = 2.0
+        SCORE_ACCEPT = 1.0
+        WEIGHT_DECAY = 0.8
+
+        best_served = served_tours.copy()
+        best_unserved = unserved_tours.copy()
+        best_obj = best_served["tour_revenue"].sum()
+
+        current_served = served_tours.copy()
+        current_unserved = unserved_tours.copy()
+        current_obj = best_obj
+
+        # Simulated annealing parameters
+        T = max(best_obj * 0.05, 1.0)
+        cooling = math.exp(math.log(0.01) / max(n_iter, 1))
+
+        n_remove = max(1, min(5, len(best_served) // 4))
+
+        for iteration in range(n_iter):
+            # Select operators via roulette wheel
+            d_idx = self._roulette(rng, destroy_weights)
+            r_idx = self._roulette(rng, repair_weights)
+
+            # Destroy
+            removed, candidate_served = destroy_ops[d_idx](
+                current_served.copy(), current_unserved.copy(), n_remove, rng
+            )
+
+            # Repair
+            candidate_unserved, candidate_served = repair_ops[r_idx](
+                removed, candidate_served
+            )
+
+            candidate_obj = candidate_served["tour_revenue"].sum()
+            delta = candidate_obj - current_obj
+
+            # Acceptance (simulated annealing)
+            if delta >= 0 or rng.random() < math.exp(delta / T):
+                current_served = candidate_served
+                current_unserved = candidate_unserved
+                current_obj = candidate_obj
+                score = SCORE_IMPROVE if delta > 0 else SCORE_ACCEPT
+
+                if current_obj > best_obj:
+                    best_served = current_served.copy()
+                    best_unserved = current_unserved.copy()
+                    best_obj = current_obj
+                    score = SCORE_BEST
+            else:
+                score = 0.0
+
+            # Update weights
+            destroy_weights[d_idx] = (
+                WEIGHT_DECAY * destroy_weights[d_idx] + (1 - WEIGHT_DECAY) * score
+            )
+            repair_weights[r_idx] = (
+                WEIGHT_DECAY * repair_weights[r_idx] + (1 - WEIGHT_DECAY) * score
+            )
+
+            T *= cooling
+
+        return best_unserved, best_served
+
+    @staticmethod
+    def _roulette(rng, weights):
+        """Roulette-wheel selection over operator weights."""
+        total = sum(weights)
+        r = rng.random() * total
+        cumulative = 0.0
+        for i, w in enumerate(weights):
+            cumulative += w
+            if r <= cumulative:
+                return i
+        return len(weights) - 1
+
+    def _random_removal(self, served, unserved, n_remove, rng):
+        """Destroy operator: randomly remove n_remove tours from served."""
+        if served.empty:
+            return unserved, served
+        indices = rng.sample(range(len(served)), min(n_remove, len(served)))
+        removed = served.iloc[indices].copy()
+        remaining = served.drop(served.index[indices]).reset_index(drop=True)
+        all_unserved = (
+            pd.concat([unserved, removed]).sort_values("time").reset_index(drop=True)
+        )
+        return all_unserved, remaining
+
+    def _related_removal(self, served, unserved, n_remove, rng):
+        """
+        Destroy operator: remove a seed tour and its n_remove-1 most
+        temporally related neighbours (similar departure time).
+        """
+        if served.empty:
+            return unserved, served
+        seed_idx = rng.randint(0, len(served) - 1)
+        seed_time = served.iloc[seed_idx]["time"]
+        time_diffs = (served["time"] - seed_time).abs()
+        closest = time_diffs.nsmallest(min(n_remove, len(served))).index
+        removed = served.loc[closest].copy()
+        remaining = served.drop(closest).reset_index(drop=True)
+        all_unserved = (
+            pd.concat([unserved, removed]).sort_values("time").reset_index(drop=True)
+        )
+        return all_unserved, remaining
+
+    def _greedy_insert(self, unserved, served):
+        """
+        Repair operator: for each vehicle cluster in turn, call _migrate to
+        greedily insert unserved tours. Processes vehicles in order.
+        """
+        for vehicle_id in range(self.num_vehicles):
+            if unserved.empty:
+                break
+            unserved, served = self._migrate(vehicle_id, unserved, served)
+        return unserved, served
+
+    def _regret2_insert(self, unserved, served):
+        """
+        Repair operator: regret-2 insertion. For each unserved tour, estimate
+        the gain from inserting into the best vs second-best vehicle cluster.
+        Insert the tour with the highest regret (largest gap) first.
+        """
+        if unserved.empty:
+            return unserved, served
+
+        # Compute a simple insertion gain proxy: tour_revenue weighted by
+        # how much spare time the cluster has (avoids a full MIP per candidate).
+        vehicle_ids = list(range(self.num_vehicles))
+
+        def _cluster_end_time(vid):
+            cluster_tours = served[served["cluster_id"] == vid]
+            if cluster_tours.empty:
+                return 0
+            return (cluster_tours["time"] + cluster_tours["duration"]).max()
+
+        remaining_unserved = unserved.copy()
+        while not remaining_unserved.empty:
+            gains = []
+            for _, row in remaining_unserved.iterrows():
+                tour_time = row["time"]
+                tour_rev = row["tour_revenue"]
+                vehicle_gains = []
+                for vid in vehicle_ids:
+                    end_t = _cluster_end_time(vid)
+                    slack = max(0, tour_time - end_t)
+                    vehicle_gains.append(tour_rev * (1 + slack / (tour_time + 1)))
+                vehicle_gains_sorted = sorted(vehicle_gains, reverse=True)
+                regret = (
+                    vehicle_gains_sorted[0] - vehicle_gains_sorted[1]
+                    if len(vehicle_gains_sorted) >= 2
+                    else vehicle_gains_sorted[0]
+                )
+                gains.append((regret, row.name))
+
+            # Insert tour with highest regret first
+            gains.sort(reverse=True)
+            best_tour_idx = gains[0][1]
+            best_tour = remaining_unserved.loc[[best_tour_idx]]
+
+            # Find best vehicle (highest gain) for this tour
+            tour_time = best_tour.iloc[0]["time"]
+            best_vid = min(
+                vehicle_ids, key=lambda v: abs(_cluster_end_time(v) - tour_time)
+            )
+            remaining_unserved_temp = remaining_unserved.drop(best_tour_idx)
+            unserved_attempt = pd.concat([best_tour, remaining_unserved_temp]).sort_values("time").reset_index(drop=True)
+
+            unserved_attempt, served = self._migrate(best_vid, unserved_attempt, served)
+
+            # Check if it was inserted
+            if len(unserved_attempt) < len(remaining_unserved):
+                remaining_unserved = unserved_attempt
+            else:
+                remaining_unserved = remaining_unserved.drop(best_tour_idx).reset_index(drop=True)
+
+        return remaining_unserved, served
+
     def split_flow_string(self, flow_str):
         open_bracket = flow_str.index("[")
         close_bracket = flow_str.index("]")
@@ -578,9 +826,17 @@ class FleetOpVRP:
         source, destination = content.split(",", 1)
         return source.strip(), destination.strip()
 
-    def _RunVRP(self, input_to_vrp, resolve=False):
-        # input_to_vrp.to_csv('input_to_vrp.csv', index=False)
-        K = 1
+    def _RunVRP(self, input_to_vrp, K=1, resolve=False, time_limit=1800, optimality_gap=0.1):
+        """
+        Solve the single- or multi-vehicle eUAMVRP-NL with nonlinear charging.
+
+        Parameters
+        ----------
+        K                : number of vehicles (1 for CFRS heuristic, >1 for exact benchmark)
+        resolve          : if True, lock previously served tours and attempt to insert unserved ones
+        time_limit       : Gurobi time limit in seconds
+        optimality_gap   : Gurobi MIPGap
+        """
         N = input_to_vrp.shape[0] + 2
         if self.linear:
             cs = np.array([0] + [4.3085625] * 32)
@@ -729,11 +985,9 @@ class FleetOpVRP:
         s_ik = [(i, k) for i in range(N) for k in range(K)]
         s_ik = m.addVars(s_ik, vtype=GRB.CONTINUOUS, name="s")
 
-        Delta_ik = [(i, k) for i in range(N) for k in range(K)]
-        Delta_ik = m.addVars(Delta_ik, vtype=GRB.CONTINUOUS, name="Delta")
-
-        delta_ik = [(i, k) for i in range(N) for k in range(K)]
-        delta_ik = m.addVars(delta_ik, vtype=GRB.CONTINUOUS, name="delta")
+        # Delta_ik (charging time before repo) and delta_ik (charging time after repo) are
+        # directly determined by v_ik - w_ik and v_ik2 - w_ik2, so we inline them rather
+        # than carrying redundant auxiliary variables (addresses Reviewer 2 comment 3.2).
 
         g_ik = [(i, k) for i in range(N) for k in range(K)]
         g_ik = m.addVars(g_ik, vtype=GRB.CONTINUOUS, name="g")
@@ -852,13 +1106,9 @@ class FleetOpVRP:
                     beta_isk2[i, max(S), k] <= n_isk2[i, max(S), k]
                 )  # CONSTRAINT (32)
 
-                m.addConstr(
-                    Delta_ik[i, k] == v_ik[i, k] - w_ik[i, k]
-                )  # CONSTRAINT (33)
-                m.addConstr(
-                    delta_ik[i, k] == v_ik2[i, k] - w_ik2[i, k]
-                )  # CONSTRAINT (34)
-
+                # SoC contiguity: if SoC level s-1 is active but s+1 is not yet reached,
+                # level s must also be active — prevents non-contiguous SoC selection
+                # (addresses Reviewer 2 comment 3.3).
                 for s in range(1, len(S) - 1):
                     m.addConstr(
                         alpha_isk[i, s, k] <= m_isk[i, s, k] + m_isk[i, s + 1, k]
@@ -872,21 +1122,34 @@ class FleetOpVRP:
                     m.addConstr(
                         beta_isk2[i, s, k] <= n_isk2[i, s, k] + n_isk2[i, s + 1, k]
                     )  # CONSTRAINT (31)
+                    # Contiguity: m_isk[s] >= m_isk[s-1] - m_isk[s+1] ensures no gap
+                    m.addConstr(m_isk[i, s, k] >= m_isk[i, s - 1, k] - m_isk[i, s + 1, k])
+                    m.addConstr(n_isk[i, s, k] >= n_isk[i, s - 1, k] - n_isk[i, s + 1, k])
+                    m.addConstr(m_isk2[i, s, k] >= m_isk2[i, s - 1, k] - m_isk2[i, s + 1, k])
+                    m.addConstr(n_isk2[i, s, k] >= n_isk2[i, s - 1, k] - n_isk2[i, s + 1, k])
 
         for k in range(K):
             for i in range(N):
                 m.addConstr(g_ik[i, k] == d[i] + t[i])  # CONSTRAINT (35)
                 for j in range(N):
                     if i < j:
+                        # Delta_ik and delta_ik inlined as (v-w) expressions (no aux var needed)
                         m.addConstr(
                             g_ik[i, k]
-                            + Delta_ik[i, k]
+                            + (v_ik[i, k] - w_ik[i, k])
                             + t[j]
                             + tilt[i, j]
-                            + delta_ik[i, k]
+                            + (v_ik2[i, k] - w_ik2[i, k])
                             - g_ik[j, k]
                             <= M * (1 - x_ijk[i, j, k])
                         )  # CONSTRAINT (36)
+                        # Zero-repo: if repositioning time is 0, no second charging session
+                        # can occur on edge (i,j) (addresses Reviewer 2 comment 3.1).
+                        if tilt[i, j] == 0:
+                            m.addConstr(
+                                v_ik2[i, k] - w_ik2[i, k]
+                                <= M * (1 - x_ijk[i, j, k])
+                            )  # second charging time forced to 0 when repo time = 0
 
         for k in range(K):
             m.addConstr(p_ik2[0, k] == 100)  # CONSTRAINT (37)
@@ -926,31 +1189,30 @@ class FleetOpVRP:
                             >= -M * (1 - x_ijk[i, j, k])
                         )  # CONSTRAINT (42)
 
-        # CONSTRAINT (46)
+        # CONSTRAINT (46) — domain bounds
         for k in range(K):
             for i in range(N):
-                # Define domain
                 m.addConstr(w_ik[i, k] >= 0)
                 m.addConstr(v_ik[i, k] >= 0)
-                m.addConstr(Delta_ik[i, k] >= 0)
+                m.addConstr(w_ik2[i, k] >= 0)
+                m.addConstr(v_ik2[i, k] >= 0)
                 m.addConstr(p_ik[i, k] >= 0)
                 m.addConstr(q_ik[i, k] >= 0)
 
         m.update()
         m.Params.OutputFlag = 0
-        m.Params.MIPGap = 0.1
+        m.Params.MIPGap = optimality_gap
+        m.Params.TimeLimit = time_limit
+        m.Params.threads = 8
 
         if resolve:
             m.Params.NumericFocus = 3
             m.Params.FeasibilityTol = 1e-2
             m.Params.IntFeasTol = 1e-2
-            m.Params.MIPGap = 0.05
+            m.Params.MIPGap = min(optimality_gap, 0.05)
         else:
             m.Params.FeasibilityTol = 1e-6
             m.Params.IntFeasTol = 1e-6
-
-        m.Params.threads = 8
-        m.Params.TimeLimit = 60 * 30
 
         m.optimize()
 

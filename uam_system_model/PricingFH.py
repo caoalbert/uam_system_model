@@ -459,13 +459,15 @@ class PricingOptimizer:
         prices = prices[["flight_index", "percentage_uam"]]
         flow = results[results["Variable"].str.contains("x_ij")]
 
+        if flow.shape[0] == 0:
+            return pd.DataFrame(), pd.DataFrame()  # No flights assigned, return empty DataFrames
+        
         pattern = r"x_ij\[\('Task_\d+', 'start'\)"
         flow = flow[flow["Variable"].str.contains(pattern)].reset_index(drop=True)
         flow["flight_index"] = flow["Variable"].apply(
             lambda x: int(re.findall(r"Task_(\d+)", x)[0])
         )
-        print(flow)
-        print(flow[flow['Variable']=="['Source', 'Sink']"])
+
         flow = flow[["flight_index", "Value"]]
         flow = flow.rename(columns={"Value": "num_flights"})
         output_merged = prices.merge(flow, on="flight_index", how="left")

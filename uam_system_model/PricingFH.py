@@ -459,7 +459,7 @@ class PricingOptimizer:
         prices = prices[["flight_index", "percentage_uam"]]
         flow = results[results["Variable"].str.contains("x_ij")]
 
-        if flow.shape[0] == 0:
+        if flow.empty:
             return pd.DataFrame(), pd.DataFrame()  # No flights assigned, return empty DataFrames
         
         pattern = r"x_ij\[\('Task_\d+', 'start'\)"

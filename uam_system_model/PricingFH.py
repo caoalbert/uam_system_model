@@ -464,6 +464,8 @@ class PricingOptimizer:
         flow["flight_index"] = flow["Variable"].apply(
             lambda x: int(re.findall(r"Task_(\d+)", x)[0])
         )
+        print(flow)
+        print(flow[flow['Variable']=="['Source', 'Sink']"])
         flow = flow[["flight_index", "Value"]]
         flow = flow.rename(columns={"Value": "num_flights"})
         output_merged = prices.merge(flow, on="flight_index", how="left")

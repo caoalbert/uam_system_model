@@ -708,6 +708,8 @@ class AssignmentNetwork:
 
     def _create_basic_edges(self):
         di_bar = []
+        source_to_sink = [("Source", "Sink")]
+        di_bar = di_bar + [0 for _ in range(len(source_to_sink))]
         source_to_task = [
             ("Source", (task.name, "start")) for task in self.list_of_tasks
         ]
@@ -718,7 +720,7 @@ class AssignmentNetwork:
             ((task.name, "start"), (task.name, "finish")) for task in self.list_of_tasks
         ]
         di_bar = di_bar + [task.num_pax for task in self.list_of_tasks]
-        basic_edges = source_to_task + task_to_sink + task_to_task
+        basic_edges = source_to_sink + source_to_task + task_to_sink + task_to_task
 
         return basic_edges, di_bar
 

@@ -10,7 +10,7 @@ from metadata.uam_schema import UAMSchema
 
 from uam_system_model.StarNetworkJFK import StarNetwork
 
-from uam_system_model.Pricing import PricingOptimizer
+from uam_system_model.PricingFH import PricingOptimizer
 
 import argparse
 
@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
     first_mile = np.zeros(shape=(len(vertiports), 24)) 
     last_mile = np.zeros(shape=(len(vertiports), 24))
-    first_or_last_cost = np.zeros(shape=(len(vertiports), len(vertiports), 24))  # Assuming first and last mile costs are included in the driving cost
+    first_and_last_cost = np.zeros(shape=(len(vertiports), len(vertiports), 24))  # Assuming first and last mile costs are included in the driving cost
 
     def fill_od(csv_path, o, d):
         tmp = pd.read_csv(csv_path)
@@ -110,7 +110,7 @@ if __name__ == "__main__":
             first_mile[o,h] = row["FM_duration_min"]
             last_mile[d,h] = row["LM_duration_min"]
             driving_cost[o,d,h] = row["Driving_Fare_USD"]
-            first_or_last_cost[o,d,h] = row["FM_fare_USD"] + row["LM_fare_USD"]
+            first_and_last_cost[o,d,h] = row["FM_fare_USD"] + row["LM_fare_USD"]
 
     fill_od("data/uiuc_c.csv", 0, 1)
     fill_od("data/c_uiuc.csv", 1, 0)
@@ -134,7 +134,7 @@ if __name__ == "__main__":
             uber_fare=driving_cost,
             first_mile_time=first_mile,
             last_mile_time=last_mile,
-            first_or_last_cost=first_or_last_cost,  # Assuming first and last mile costs are included in the driving cost
+            first_and_last_cost=first_and_last_cost,  # Assuming first and last mile costs are included in the driving cost
             uam_flight_time = flight_time_matrix,
             uam_distance_matrix=flight_distance_matrix,
             optimality_gap=0.05,
@@ -142,11 +142,11 @@ if __name__ == "__main__":
             time_limit=3600,
             uam_transition_time=10,
             utility_type="betas",
-            opex_per_asm=c,
+            cost_per_fh=c,
+            cost_per_fc=20,
             fato_capacity = 10,  # capacity per time interval for FATO constraint
             num_seats=4,
-            fixed_cost_per_flight=20,
             verbose=False
             )
-            df[0].to_csv(f"results2/{f}_{round(c*10, 0)}.csv", index=False)
-            df[1].to_csv(f"results2/task_log_{f}_{round(c*10, 0)}.csv", index=False)
+            df[0].to_csv(f"results2/{f}_{int(c)}.csv", index=False)
+            df[1].to_csv(f"results2/task_log_{f}_{int(c)}.csv", index=False)

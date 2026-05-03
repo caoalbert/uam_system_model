@@ -459,11 +459,26 @@ class PricingOptimizer:
         prices = prices[["flight_index", "percentage_uam"]]
         flow = results[results["Variable"].str.contains("x_ij")]
 
+        if flow['Variable'][0] == 'x_ij[Source,Sink]' and flow.shape[0] == 1:
+            empty_results = pd.DataFrame(columns=[
+                "flight_index", "percentage_uam", "fare",
+                "origin_vertiport_id", "destination_vertiport_id",
+                "passenger_arrival_time_slot", "num_pax", "distance",
+                "uam_pax", "rev_per_mile", "markets", "num_flights", "total_revenue",
+            ])
+            empty_repo = pd.DataFrame(columns=[
+                "Variable", "Value", "finish_task", "start_task",
+                "origin_vertiport_id", "destination_vertiport_id",
+                "repo_flight_time", "time_slot", "repositioning_hour", "cost",
+            ])
+            return empty_results, empty_repo
+        
         pattern = r"x_ij\[\('Task_\d+', 'start'\)"
         flow = flow[flow["Variable"].str.contains(pattern)].reset_index(drop=True)
         flow["flight_index"] = flow["Variable"].apply(
             lambda x: int(re.findall(r"Task_(\d+)", x)[0])
         )
+
         flow = flow[["flight_index", "Value"]]
         flow = flow.rename(columns={"Value": "num_flights"})
         output_merged = prices.merge(flow, on="flight_index", how="left")
@@ -708,6 +723,8 @@ class AssignmentNetwork:
 
     def _create_basic_edges(self):
         di_bar = []
+        source_to_sink = [("Source", "Sink")]
+        di_bar = di_bar + [0 for _ in range(len(source_to_sink))]
         source_to_task = [
             ("Source", (task.name, "start")) for task in self.list_of_tasks
         ]
@@ -718,7 +735,7 @@ class AssignmentNetwork:
             ((task.name, "start"), (task.name, "finish")) for task in self.list_of_tasks
         ]
         di_bar = di_bar + [task.num_pax for task in self.list_of_tasks]
-        basic_edges = source_to_task + task_to_sink + task_to_task
+        basic_edges = source_to_sink + source_to_task + task_to_sink + task_to_task
 
         return basic_edges, di_bar
 

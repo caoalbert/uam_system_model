@@ -236,6 +236,13 @@ def realized_metrics(network, served):
     return row
 
 
+def run_dir_name(method, K, step_up=2.0):
+    """Folder of a feedback run (shared by converge, converge_market and evaluate)."""
+    if method == "market":
+        return f"market_K{K}_v2" + ("_variablecost" if COST_BASIS == "variable" else "")
+    return f"hourly_cost_K{K}" + ("" if step_up == 2 else f"_step{step_up:g}")
+
+
 def operating_cost(stats, K):
     """Daily operating cost of the stage-2 schedule, same formulas as cost.py (CostAnalyzer._compute_opex):
     variable (energy, pilot, battery replacement, maintenance) + fixed (insurance, vertiport operation),
@@ -379,8 +386,7 @@ def converge(K, max_iter, n_processes, tol_fare=0.02, tol_plan=0.02, tol_cost=0.
           $0.79/seat-mile + $20/flight (ATRDS); from round 1 the fed-back rate and no $20 per flight.
     Stop (n >= 1): cost gap <= 2% (target), fare change <= 2%, stage-1 flights-per-hour change <= 2%.
     Not converged -> the last round. Diagnostics per round: pax flown / sold, stage-1 vs stage-2 flights per capped hour."""
-    name = f"hourly_cost_K{K}" + ("" if step_up == 2 else f"_step{step_up:g}")
-    base = R.ensure(os.path.join(OUT, name))
+    base = R.ensure(os.path.join(OUT, run_dir_name("hourly", K, step_up)))
     rho, rate, fixed, rows, df_prev = {}, 0.79, FIXED_COST_PER_FLIGHT, [], None
     for n in range(max_iter):
         d = R.ensure(os.path.join(base, f"iter{n}"))
@@ -484,7 +490,7 @@ def converge_market(K, max_iter, n_processes, tol_fare=0.02, tol_cost=0.02, pax_
     Stop (n >= 1): passengers flown / tickets sold >= 0.95, |rate used - rate realized| / realized <= 2%,
       fare change <= 2% and stage-1 flights per hour change <= 2%. Else the round with the highest stage-2 profit (finish())."""
     # v2 (2026-10-09): round 0 = $0.79/seat-mile + $20/flight (ATRDS); from round 1 stage 2's cost per seat-mile, no $20
-    base = R.ensure(os.path.join(OUT, f"market_K{K}_v2" + ("_variablecost" if COST_BASIS == "variable" else "")))
+    base = R.ensure(os.path.join(OUT, run_dir_name("market", K, step_up)))
     caps, rate, fixed, rows, df_prev = {}, 0.79, FIXED_COST_PER_FLIGHT, [], None
     for n in range(max_iter):
         d = R.ensure(os.path.join(base, f"iter{n}"))
@@ -556,10 +562,11 @@ def converge_market(K, max_iter, n_processes, tol_fare=0.02, tol_cost=0.02, pax_
 
 
 # ---------------------------------------------------------------- evaluate on other demand days
-def evaluate(K, plan, seeds, n_processes, method="hourly"):
-    base = os.path.join(OUT, f"{method}_K{K}")
-    if not os.path.exists(base):  # runs made before 2026-10-09 (Algorithm 1, open loop)
-        base = os.path.join(OUT, f"variable_K{K}")
+def evaluate(K, plan, seeds, n_processes, method="hourly", step_up=2.0):
+    # JAT2026 (2026-10-10): same folder as the converge run of this method; no silent fallback to older runs
+    base = os.path.join(OUT, run_dir_name(method, K, step_up))
+    if not os.path.exists(os.path.join(base, "final_iteration.txt" if plan == "final" else plan)):
+        raise FileNotFoundError(f"no converge run to evaluate in {base} (plan {plan})")
     if plan == "final":
         with open(os.path.join(base, "final_iteration.txt")) as f:
             plan_dir = f"iter{f.read().strip()}"
@@ -630,7 +637,7 @@ def main():
             converge(a.fleet, a.max_iter, a.n_processes, step_up=a.step_up)
     else:
         lo, hi = (int(x) for x in a.seeds.split("-")) if "-" in a.seeds else (int(a.seeds),) * 2
-        evaluate(a.fleet, a.plan, list(range(lo, hi + 1)), a.n_processes, a.method)
+        evaluate(a.fleet, a.plan, list(range(lo, hi + 1)), a.n_processes, a.method, a.step_up)
 
 
 if __name__ == "__main__":

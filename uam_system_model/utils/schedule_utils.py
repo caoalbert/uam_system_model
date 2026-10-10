@@ -302,7 +302,7 @@ def get_autoregressive_pax_count(arr_merged, auto_regressive_alpha):
     # Calculate hourly rate
     arr_merged_v2 = arr_merged.copy()
     arr_merged_v2["time_interval"] = arr_merged_v2["time"] // 60
-    arr_merged_v2_grouped = arr_merged_v2.groupby("time_interval").sum("capacity")
+    arr_merged_v2_grouped = arr_merged_v2.groupby("time_interval").sum(numeric_only=True)  # JAT2026: pandas>=3 needs a bool; "capacity" was truthy -> same result
     arr_merged_v2_grouped = (
         arr_merged_v2_grouped.merge(
             pd.DataFrame({"time_interval": np.arange(0, 24, 1), "demand": 0}),
@@ -390,7 +390,7 @@ def get_autoregressive_pax_count_v2(
         alpha_index = 1
 
     lax_flight["time_interval"] = lax_flight["time"] // 60
-    lax_flight_grouped = lax_flight.groupby("time_interval").sum("capacity")
+    lax_flight_grouped = lax_flight.groupby("time_interval").sum(numeric_only=True)  # JAT2026: pandas>=3 needs a bool; "capacity" was truthy -> same result
     lax_flight_grouped = (
         lax_flight_grouped.merge(
             pd.DataFrame({"time_interval": np.arange(0, 24, 1), "demand": 0}),

@@ -1,0 +1,3 @@
+[submodule "external/jat26-economic-feasibility-paper"]
+	path = external/jat26-economic-feasibility-paper
+	url = https://github.com/AndrewParkJH/jat26-economic-feasibility-paper

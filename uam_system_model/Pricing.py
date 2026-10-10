@@ -36,6 +36,12 @@ class PricingOptimizer:
         num_seats=4,
         fixed_cost_per_flight=20,
         verbose=True,
+        repo_time_factor=2,  # JAT2026: 2 = ATRDS code (repositioning time counted twice); 1 = paper Eq. (9)
+        max_idle_slots=12,  # JAT2026: max wait between two revenue flights of one aircraft (slots)
+        ground_cost_in_objective=False,  # JAT2026 Fix #4: True subtracts first/last-mile ground cost from revenue in the objective (betas only)
+        flight_caps=None,  # JAT2026 F2-7 (superseded, kept for reference): {(origin, destination, slot): max flights}
+        hourly_caps=None,  # JAT2026 F2-7 Algorithm 1: {hour: max revenue + repositioning flights departing in that hour}
+        market_hour_caps=None,  # JAT2026 F2-7 original plan: {(origin, destination, hour): max revenue flights in that hour}
     ):
         if isinstance(value_of_time, int) or isinstance(value_of_time, float):
             value_of_time = [
@@ -89,6 +95,8 @@ class PricingOptimizer:
                     flight_time_matrix=self.flight_time_matrix,
                     num_pax=row["counts"],
                     uam_distance_matrix=uam_distance_matrix,
+                    repo_time_factor=repo_time_factor,
+                    max_idle_slots=max_idle_slots,
                 )
             )
 
@@ -243,6 +251,33 @@ class PricingOptimizer:
                 name=f"pwl2_{i}",
             )
 
+        # JAT2026 F2-7 (Algorithm 1, Eq. hourly_cap): network-wide cap on revenue flights
+        # (market edges) + repositioning flights (connection edges between different
+        # vertiports, assigned to the hour in which the first flight lands) per hour.
+        if hourly_caps:
+            slots_per_hour = int(60 // self.time_resolution)
+            task_by_name = {t.name: t for t in all_tasks}
+            per_hour = {}
+            for e in self.edges:
+                u, v = e
+                if not (isinstance(u, tuple) and isinstance(v, tuple)):
+                    continue
+                if u[0] == v[0] and u[1] == "start":
+                    hour = (int(task_by_name[u[0]].start_time) - 1) // slots_per_hour
+                elif u[1] == "finish" and v[1] == "start":
+                    ti, tj = task_by_name[u[0]], task_by_name[v[0]]
+                    if ti.destination == tj.origin:
+                        continue
+                    hour = (int(ti.land_time) - 1) // slots_per_hour
+                else:
+                    continue
+                if hour in hourly_caps:
+                    per_hour.setdefault(hour, []).append(m._x_vars[e])
+            for hour, xs in per_hour.items():
+                m.addConstr(quicksum(xs) <= hourly_caps[hour], f"hourcap_{hour}")
+            self.hourly_cap_terms = {h: len(xs) for h, xs in per_hour.items()}
+            self.hourly_cap_vars = per_hour  # JAT2026: read .X after optimize (stage-1 flights per capped hour)
+
         # Flow conservation constraints
         for n in self.nodes:
             m.addConstr(
@@ -253,6 +288,7 @@ class PricingOptimizer:
             )
 
         # Capacity constraints
+        market_terms = {}
         for i in range(len(non_zero_indices)):
             idx = non_zero_indices[i]
             m.addConstr(
@@ -260,6 +296,26 @@ class PricingOptimizer:
                 >= m._theta_uam[i] * di_bar_selected_x[i],
                 f"cap_{i}",
             )
+            if flight_caps is not None:
+                # JAT2026 F2-7: capacity feedback from stage 2 (task i <-> pax_arr_grouped row i)
+                row = self.pax_arr_grouped.iloc[i]
+                key = (
+                    int(row["origin_vertiport_id"]),
+                    int(row["destination_vertiport_id"]),
+                    int(row["passenger_arrival_time_slot"]),
+                )
+                if key in flight_caps:
+                    m.addConstr(
+                        m._x_vars[self.edges[idx]] <= flight_caps[key], f"fbcap_{i}"
+                    )
+            if market_hour_caps is not None:
+                # JAT2026 F2-7 original plan: collect market flights by (o, d, hour); the task name gives the
+                # pax_arr_grouped row (Task_<row>), hour = (slot - 1) // slots per hour (slots start at 1)
+                row = self.pax_arr_grouped.loc[int(self.edges[idx][0][0].split("_")[1])]
+                key = (int(row["origin_vertiport_id"]), int(row["destination_vertiport_id"]),
+                       (int(row["passenger_arrival_time_slot"]) - 1) // int(60 // self.time_resolution))
+                if key in market_hour_caps:
+                    market_terms.setdefault(key, []).append(m._x_vars[self.edges[idx]])
             if utility_type == "vot":
                 m.addGenConstrPWL(
                     m._x_vars[self.edges[idx]],
@@ -268,6 +324,9 @@ class PricingOptimizer:
                     y_inverse_s,
                     name=f"inv_pwl_{i}",
                 )
+        for key, xs in market_terms.items():  # JAT2026 F2-7 original plan: sum over the hour's slots <= cap
+            m.addConstr(quicksum(xs) <= market_hour_caps[key], f"mhcap_{key[0]}_{key[1]}_{key[2]}")
+        self.market_cap_terms = {k: len(v) for k, v in market_terms.items()}
 
         operating_cost = quicksum(
             m._x_vars[self.edges[i]] * flight_cost_uam[i_non_zero]
@@ -389,6 +448,16 @@ class PricingOptimizer:
             objective = (
                 theta_terms + other_terms + operating_cost + cost_level_of_service
             )
+            if ground_cost_in_objective:
+                # JAT2026 Fix #4: the logit gives the passenger's total price (air fare + ground
+                # leg); the operator only keeps the air fare (calc_fare_betas subtracts the ground
+                # cost afterwards). Objective = -(profit), so add d_i * theta_i * ground_cost_i.
+                objective += quicksum(
+                    di_bar_selected_x[i_non_zero]
+                    * m._theta_uam[i_non_zero]
+                    * first_last_mile_cost[i_non_zero]
+                    for i_non_zero in range(len(di_bar_selected_x))
+                )
 
         m.setObjective(objective, GRB.MINIMIZE)
 
@@ -488,6 +557,13 @@ class PricingOptimizer:
         pattern = r"\[\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]finish['\"]\)\s*,\s*\(['\"].*?(\d+)['\"]\s*,\s*['\"]start['\"]\)\s*\]"
         repo_flights = results[results["Variable"].str.contains(pattern, regex=True)]
         repo_flights = repo_flights.reset_index(drop=True)
+
+        if repo_flights.empty:
+            # JAT2026: no connections selected (tiny instances); return an empty table instead of crashing
+            for col in ["finish_task", "start_task", "origin_vertiport_id", "destination_vertiport_id",
+                        "repo_flight_time", "time_slot", "repositioning_distance", "cost"]:
+                repo_flights[col] = pd.Series(dtype=float)
+            return df, repo_flights
 
         pattern = r"\('Task_(\d+)', 'finish'\),\('Task_(\d+)', 'start'\)"
         repo_flights[["finish_task", "start_task"]] = (
@@ -591,7 +667,11 @@ class FlightTask:
         flight_time_matrix,
         uam_distance_matrix,
         num_pax,
+        repo_time_factor=2,
+        max_idle_slots=12,
     ):
+        self.repo_time_factor = repo_time_factor
+        self.max_idle_slots = max_idle_slots
         self.name = name
         self.start_time = start_time
         self.duration = duration
@@ -607,15 +687,13 @@ class FlightTask:
 
         next_task_start_time = next_task.start_time
 
-        ready_time = (
-            self.land_time
-            + self.flight_time_matrix[self.destination, next_task.origin]
-            + reposition_time
-        )
+        # JAT2026: ATRDS code added reposition_time twice (repo_time_factor=2);
+        # repo_time_factor=1 matches the paper's connection rule.
+        ready_time = self.land_time + self.repo_time_factor * reposition_time
 
         if (
             next_task_start_time - ready_time >= 0
-            and next_task_start_time - ready_time <= 12
+            and next_task_start_time - ready_time <= self.max_idle_slots
         ):
             return True
         else:

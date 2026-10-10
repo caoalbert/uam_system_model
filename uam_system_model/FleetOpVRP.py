@@ -1,6 +1,7 @@
 import logging
 import math
 import multiprocessing
+import os
 import re
 from time import time
 
@@ -54,7 +55,7 @@ class FleetOpVRP:
         linear_battery_charging=False,
         n_processes=16,
         verbose=False,
-        alns_iterations=30,
+        alns_iterations=0,  # JAT2026: default to single-pass insertion as on main (ALNS untested)
     ):
         """
         param num_vehicles: Number of vehicles in the fleet
@@ -567,6 +568,7 @@ class FleetOpVRP:
     def _migrate(self, target_cluster, unserved_tours, served_tours):
         unserved_tours = unserved_tours.copy()
         served_tours = served_tours.copy()
+        orig_unserved, orig_served = unserved_tours.copy(), served_tours.copy()  # JAT2026: fallback if the re-solve finds no solution
 
         unserved_tours["served"] = 0
         served_tours["served"] = 1
@@ -588,6 +590,8 @@ class FleetOpVRP:
             .reset_index(drop=True)
         )
         m, idx_not_served = self._RunVRP(input_to_vrp, resolve=True)
+        if m is None:  # JAT2026: no feasible solution found in the time limit -> keep this aircraft's tours unchanged
+            return orig_unserved, orig_served
         idx_served = [i for i in range(len(input_to_vrp)) if i not in idx_not_served]
         p, q, p2, q2 = [], [], [], []
         for idx in idx_served:
@@ -1122,11 +1126,11 @@ class FleetOpVRP:
                     m.addConstr(
                         beta_isk2[i, s, k] <= n_isk2[i, s, k] + n_isk2[i, s + 1, k]
                     )  # CONSTRAINT (31)
-                    # Contiguity: m_isk[s] >= m_isk[s-1] - m_isk[s+1] ensures no gap
-                    m.addConstr(m_isk[i, s, k] >= m_isk[i, s - 1, k] - m_isk[i, s + 1, k])
-                    m.addConstr(n_isk[i, s, k] >= n_isk[i, s - 1, k] - n_isk[i, s + 1, k])
-                    m.addConstr(m_isk2[i, s, k] >= m_isk2[i, s - 1, k] - m_isk2[i, s + 1, k])
-                    m.addConstr(n_isk2[i, s, k] >= n_isk2[i, s - 1, k] - n_isk2[i, s + 1, k])
+                    # JAT2026: REMOVED the "contiguity" constraints added in commit 0ad0e0c
+                    # (m[s] >= m[s-1] - m[s+1], same for n, m2, n2). m/n are one-hot segment
+                    # indicators (sum over s == served), so the constraint forces two segments on
+                    # and makes every served node infeasible (tested: 0 flights served).
+                    # Constraints (10)/(17)/(24)/(31) above already enforce SOS2 adjacency.
 
         for k in range(K):
             for i in range(N):
@@ -1196,6 +1200,10 @@ class FleetOpVRP:
                 m.addConstr(v_ik[i, k] >= 0)
                 m.addConstr(w_ik2[i, k] >= 0)
                 m.addConstr(v_ik2[i, k] >= 0)
+                # JAT2026: restore non-negative charging time (as on main: Delta_ik >= 0,
+                # delta_ik lb = 0). Without these, "charging" can lower SoC to save time.
+                m.addConstr(v_ik[i, k] - w_ik[i, k] >= 0)
+                m.addConstr(v_ik2[i, k] - w_ik2[i, k] >= 0)
                 m.addConstr(p_ik[i, k] >= 0)
                 m.addConstr(q_ik[i, k] >= 0)
 
@@ -1203,7 +1211,7 @@ class FleetOpVRP:
         m.Params.OutputFlag = 0
         m.Params.MIPGap = optimality_gap
         m.Params.TimeLimit = time_limit
-        m.Params.threads = 8
+        m.Params.threads = int(os.environ.get("JAT_VRP_THREADS", 8))  # JAT2026: was fixed at 8; set lower when running many processes
 
         if resolve:
             m.Params.NumericFocus = 3
@@ -1215,6 +1223,9 @@ class FleetOpVRP:
             m.Params.IntFeasTol = 1e-6
 
         m.optimize()
+
+        if resolve and m.SolCount == 0:  # JAT2026: insertion re-solve found no solution (seed-5 crash, 2026-10-08)
+            return None, None
 
         total_tours_served = gp.quicksum(
             x_ijk[i, j, k].x for i in range(1, N - 1) for j in range(1, N) if i < j

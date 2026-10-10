@@ -2,3 +2,10 @@ uam_system_model/data/LAX_ind.csv
 uam_system_model/data/JFK_ind.csv
 **/__pycache__/
 **.egg-info/
+runs/
+external/reference/
+
+Claude outputs/
+.vscode/
+*.ipynb
+data/

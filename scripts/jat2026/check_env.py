@@ -1,7 +1,7 @@
 """JAT2026: environment check for the ATRDS reproduction (F2-0).
 
 Run from the repo root with the wisk_ram_study venv:
-    C:\\work_python\\wisk\\wisk_ram_study\\.venv\\Scripts\\python.exe scripts\\jat2026\\check_env.py
+    <path to your venv>\\Scripts\\python.exe scripts\\jat2026\\check_env.py
 """
 import importlib
 import os

@@ -4,12 +4,23 @@
 #   powershell -ExecutionPolicy Bypass -File C:\work_UAM\uam_system_model\scripts\jat2026\overnight_full.ps1 [-MaxIter 8] [-StepUp 2]
 # Output: runs\jat_thin\hourly_cost_K30\ (convergence.csv, DONE.json, iterN\, eval_iterN\seedS\, evaluation_iterN.csv)
 # Logs:   runs\jat_full_converge.log, runs\jat_full_evaluate.log      Safe to re-run: finished steps are reused.
-param([int]$MaxIter = 8, [double]$StepUp = 2, [string]$Seeds = "1-5")
+param([int]$MaxIter = 8, [double]$StepUp = 2, [string]$Seeds = "1-5", [string]$Python = "")
 
 $ErrorActionPreference = "Continue"
 $repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repo
-$py = "C:\work_python\wisk\wisk_ram_study\.venv\Scripts\python.exe"
+# Python: -Python <path>, else the JAT_PYTHON environment variable, else <repo>\.venv, else python on PATH
+$py = $null
+if ($Python) { $py = $Python }
+elseif ($env:JAT_PYTHON) { $py = $env:JAT_PYTHON }
+elseif (Test-Path (Join-Path $repo ".venv\Scripts\python.exe")) { $py = Join-Path $repo ".venv\Scripts\python.exe" }
+else { $py = "python" }
+& $py -c "import gurobipy, pandas, numpy" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Python '$py' cannot import gurobipy/pandas/numpy. Pass -Python <path to python.exe> or set JAT_PYTHON." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Python: $py" -ForegroundColor Green
 $env:PYTHONUNBUFFERED = "1"
 New-Item -ItemType Directory -Force runs | Out-Null
 $sub = "hourly_cost_K30"; if ($StepUp -ne 2) { $sub = "hourly_cost_K30_step$StepUp" }

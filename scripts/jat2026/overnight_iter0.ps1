@@ -5,10 +5,23 @@
 # Logs: runs\jat\iter0_K30.log, runs\jat\eval_iter0_K30.log  (Claude can read these)
 # Safe to re-run: finished steps are skipped.
 
+param([string]$Python = "")
+
 $ErrorActionPreference = "Continue"
 $repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repo
-$py = "C:\work_python\wisk\wisk_ram_study\.venv\Scripts\python.exe"
+# Python: -Python <path>, else the JAT_PYTHON environment variable, else <repo>\.venv, else python on PATH
+$py = $null
+if ($Python) { $py = $Python }
+elseif ($env:JAT_PYTHON) { $py = $env:JAT_PYTHON }
+elseif (Test-Path (Join-Path $repo ".venv\Scripts\python.exe")) { $py = Join-Path $repo ".venv\Scripts\python.exe" }
+else { $py = "python" }
+& $py -c "import gurobipy, pandas, numpy" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Python '$py' cannot import gurobipy/pandas/numpy. Pass -Python <path to python.exe> or set JAT_PYTHON." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Python: $py" -ForegroundColor Green
 $env:PYTHONUNBUFFERED = "1"
 New-Item -ItemType Directory -Force runs\jat | Out-Null
 

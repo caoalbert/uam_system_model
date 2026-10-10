@@ -8,7 +8,7 @@ hub-spoke flight time in stage 2 only, and Pricing.py as on main are all kept.
 A corrected run comes later.
 
 Run from the repo root with the wisk venv, e.g.
-    $py = "C:\\work_python\\wisk\\wisk_ram_study\\.venv\\Scripts\\python.exe"
+    $py = "<path to your venv>\\Scripts\\python.exe"
     & $py scripts\\jat2026\\reproduce_atrds.py all --fleets 30            # Table IV
     & $py scripts\\jat2026\\reproduce_atrds.py stage1 --fleets 20-70      # Fig. 10 (6 x <= 4 h)
 Steps: stage1 -> bridge -> stage2 -> analyze ("all" runs them in order and skips
